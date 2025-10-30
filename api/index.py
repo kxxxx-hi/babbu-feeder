@@ -165,17 +165,11 @@ def executemany(q: str, rows: List[tuple]):
 # ---------- Routes ----------
 @app.route("/", methods=["GET", "POST"])
 def home():
-    try:
-        # Initialize database on first request
-        ensure_db()
-        
-        # Handle actions
-        action = request.form.get("action")
-    except Exception as e:
-        import traceback
-        return f"<h1>Error</h1><pre>{traceback.format_exc()}</pre>", 500
+    # Initialize database on first request
+    ensure_db()
     
-    try:
+    # Handle actions
+    action = request.form.get("action")
 
     if action == "save_profile":
         name = request.form.get("name") or ""
