@@ -1,5 +1,6 @@
 import math
 import sqlite3
+import os
 from datetime import date, datetime
 from typing import Optional, Tuple, List
 
@@ -8,7 +9,9 @@ from flask import Flask, render_template, request, redirect, url_for
 
 DB_PATH = "/tmp/cat_feeder.db"  # Vercel fs: write to /tmp
 
-app = Flask(__name__)
+# Fix template path for Vercel - templates are in parent directory
+template_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'templates'))
+app = Flask(__name__, template_folder=template_dir)
 
 # ---------- DB ----------
 def get_conn():
