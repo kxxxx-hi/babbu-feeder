@@ -13,6 +13,13 @@ DB_PATH = "/tmp/cat_feeder.db"  # Vercel fs: write to /tmp
 template_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'templates'))
 app = Flask(__name__, template_folder=template_dir)
 
+# Add custom Jinja2 filter for strftime
+@app.template_filter('strftime')
+def strftime_filter(date_format):
+    """Custom filter to format current date/time"""
+    from datetime import datetime
+    return datetime.now().strftime(date_format)
+
 # ---------- DB ----------
 def get_conn():
     conn = sqlite3.connect(DB_PATH, detect_types=sqlite3.PARSE_DECLTYPES, check_same_thread=False)
