@@ -68,7 +68,19 @@ def init_db():
         conn.commit()
     conn.close()
 
-init_db()
+# Initialize DB on first request instead of module load
+db_initialized = False
+
+def ensure_db():
+    global db_initialized
+    if not db_initialized:
+        try:
+            init_db()
+            db_initialized = True
+        except Exception as e:
+            print(f"Database initialization error: {e}")
+            # Try to continue anyway
+            pass
 
 # ---------- Math ----------
 def weeks_between(d1: date, d2: date) -> float:
@@ -153,8 +165,17 @@ def executemany(q: str, rows: List[tuple]):
 # ---------- Routes ----------
 @app.route("/", methods=["GET", "POST"])
 def home():
-    # Handle actions
-    action = request.form.get("action")
+    try:
+        # Initialize database on first request
+        ensure_db()
+        
+        # Handle actions
+        action = request.form.get("action")
+    except Exception as e:
+        import traceback
+        return f"<h1>Error</h1><pre>{traceback.format_exc()}</pre>", 500
+    
+    try:
 
     if action == "save_profile":
         name = request.form.get("name") or ""
@@ -259,6 +280,18 @@ def home():
 @app.route("/api/health")
 def health():
     return {"ok": True}
+
+# Simple test route
+@app.route("/test")
+def test():
+    return "Flask is working!"
+
+# Error handler for debugging - catch all exceptions
+@app.errorhandler(Exception)
+def handle_error(error):
+    import traceback
+    error_text = traceback.format_exc()
+    return f"<h1>Error Details</h1><pre>{error_text}</pre>", 500
 
 # Vercel requires variable "app"
 # already defined: app = Flask(__name__)
