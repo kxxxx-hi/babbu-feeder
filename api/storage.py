@@ -41,12 +41,20 @@ class BlobStorageManager:
         normalized = path.lstrip("/")
         return f"{self.base_url}/{self.bucket}/{normalized}"
 
-    def _headers(self, content_type: Optional[str] = None, *, disable_suffix: bool = False) -> Dict[str, str]:
+    def _headers(
+        self,
+        content_type: Optional[str] = None,
+        *,
+        disable_suffix: bool = False,
+        slug: Optional[str] = None,
+    ) -> Dict[str, str]:
         headers: Dict[str, str] = {"Authorization": f"Bearer {self.token}"}
         if content_type:
             headers["Content-Type"] = content_type
         if disable_suffix:
             headers["x-vercel-add-random-suffix"] = "0"
+        if slug:
+            headers["x-vercel-blob-slug"] = slug.lstrip("/")
         return headers
 
     def _api_headers(self) -> Dict[str, str]:
@@ -161,7 +169,7 @@ class BlobStorageManager:
             resp = requests.put(
                 url,
                 params={"access": access},
-                headers=self._headers("application/json", disable_suffix=True),
+                headers=self._headers("application/json", disable_suffix=True, slug=path),
                 data=payload,
             )
             resp.raise_for_status()
@@ -189,7 +197,7 @@ class BlobStorageManager:
             resp = requests.put(
                 url,
                 params={"access": "public"},
-                headers=self._headers(content_type, disable_suffix=True),
+                headers=self._headers(content_type, disable_suffix=True, slug=path),
                 data=image_data,
             )
             resp.raise_for_status()
