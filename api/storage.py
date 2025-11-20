@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-BLOB_WRITE_TOKEN = os.getenv("VERCEL_BLOB_WRITE_TOKEN")
+BLOB_WRITE_TOKEN = os.getenv("VERCEL_BLOB_WRITE_TOKEN") or os.getenv("BLOB_READ_WRITE_TOKEN")
 BLOB_BUCKET = os.getenv("VERCEL_BLOB_BUCKET", "babbu-feeder-blob")
 BLOB_BASE_URL = os.getenv("VERCEL_BLOB_BASE_URL", "https://blob.vercel-storage.com")
 
@@ -32,10 +32,12 @@ class BlobStorageManager:
         normalized = path.lstrip("/")
         return f"{self.base_url}/{self.bucket}/{normalized}"
 
-    def _headers(self, content_type: Optional[str] = None) -> Dict[str, str]:
-        headers = {"Authorization": f"Bearer {self.token}"}
+    def _headers(self, content_type: Optional[str] = None, *, disable_suffix: bool = False) -> Dict[str, str]:
+        headers: Dict[str, str] = {"Authorization": f"Bearer {self.token}"}
         if content_type:
             headers["Content-Type"] = content_type
+        if disable_suffix:
+            headers["x-vercel-add-random-suffix"] = "0"
         return headers
 
     def read_json(self, path: str) -> Dict[str, Any]:
@@ -60,7 +62,7 @@ class BlobStorageManager:
             resp = requests.put(
                 url,
                 params={"access": access},
-                headers=self._headers("application/json"),
+                headers=self._headers("application/json", disable_suffix=True),
                 data=payload,
             )
             resp.raise_for_status()
@@ -88,7 +90,7 @@ class BlobStorageManager:
             resp = requests.put(
                 url,
                 params={"access": "public"},
-                headers=self._headers(content_type),
+                headers=self._headers(content_type, disable_suffix=True),
                 data=image_data,
             )
             resp.raise_for_status()
