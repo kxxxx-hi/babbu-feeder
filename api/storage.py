@@ -46,7 +46,7 @@ class BlobStorageManager:
         if content_type:
             headers["Content-Type"] = content_type
         if disable_suffix:
-            headers["x-vercel-blob-add-random-suffix"] = "0"
+            headers["x-vercel-add-random-suffix"] = "0"
         return headers
 
     def _api_headers(self) -> Dict[str, str]:
