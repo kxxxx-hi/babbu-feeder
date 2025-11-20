@@ -254,7 +254,28 @@ def home():
             session["selected_cat_id"] = selected_cat_id
         return redirect(url_for("home"))
 
-    if action == "save_profile" and selected_cat_id:
+    if action == "add_cat":
+        # Create new cat
+        new_cat = {
+            "id": str(uuid.uuid4()),
+            "name": "New Cat",
+            "anchor_date": date.today().isoformat(),
+            "anchor_age_weeks": 8.0,
+            "meals_per_day": 3,
+            "life_stage_override": None
+        }
+        cat_id = save_cat_profile(new_cat)
+        session["selected_cat_id"] = cat_id
+        # Redirect with expand_profile parameter
+        return redirect(url_for("home") + "?expand_profile=true")
+
+    if action == "save_profile":
+        # Get or create cat ID
+        if not selected_cat_id:
+            # Create new cat if none selected
+            selected_cat_id = str(uuid.uuid4())
+            session["selected_cat_id"] = selected_cat_id
+        
         prof = get_cat_profile(selected_cat_id) or {}
         prof["id"] = selected_cat_id
         prof["name"] = request.form.get("name") or None
@@ -277,21 +298,8 @@ def home():
                     prof["profile_picture_filename"] = filename
         
         save_cat_profile(prof)
-        return redirect(url_for("home"))
-
-    if action == "add_cat":
-        # Create new cat
-        new_cat = {
-            "id": str(uuid.uuid4()),
-            "name": request.form.get("new_cat_name") or "New Cat",
-            "anchor_date": date.today().isoformat(),
-            "anchor_age_weeks": 8.0,
-            "meals_per_day": 3,
-            "life_stage_override": None
-        }
-        cat_id = save_cat_profile(new_cat)
-        session["selected_cat_id"] = cat_id
-        return redirect(url_for("home"))
+        # Redirect with success message and collapse profile
+        return redirect(url_for("home") + "?saved=true")
 
     if action == "add_weight" and selected_cat_id:
         wdt = request.form.get("weight_dt") or date.today().isoformat()
@@ -401,6 +409,10 @@ def home():
     # for diet form display
     diet_map = {int(r["food_id"]): float(r["pct_daily_kcal"]) for _, r in diet_df.iterrows()} if not diet_df.empty else {}
 
+    # Get query parameters for UI state
+    show_success = request.args.get('saved') == 'true'
+    expand_profile = request.args.get('expand_profile') == 'true'
+    
     return render_template(
         "index.html",
         cats=all_cats,
@@ -415,7 +427,9 @@ def home():
         foods=foods_list,
         diet_map=diet_map,
         total_pct=sum(diet_map.values()) if diet_map else 0.0,
-        trend=trend
+        trend=trend,
+        show_success=show_success,
+        expand_profile=expand_profile
     )
 
 # Health check

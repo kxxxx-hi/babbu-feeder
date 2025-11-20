@@ -38,13 +38,13 @@
   <div class="card mb-3">
     <div class="card-body">
       <div class="row g-3 align-items-end">
-        <div class="col-md-8">
+        <div class="col-md-10">
           <form method="post" id="catSelectorForm">
             <input type="hidden" name="action" value="select_cat">
             <label class="form-label fw-bold">Select Cat</label>
             <select name="selected_cat_id" class="form-select" onchange="document.getElementById('catSelectorForm').submit()">
               {% if cats|length == 0 %}
-                <option value="">No cats yet - create one below</option>
+                <option value="">No cats yet - click "Add New Cat" to create one</option>
               {% else %}
                 {% for cat in cats %}
                   <option value="{{ cat.id }}" {% if cat.id == selected_cat_id %}selected{% endif %}>
@@ -55,19 +55,33 @@
             </select>
           </form>
         </div>
-        <div class="col-md-4">
-          <form method="post">
+        <div class="col-md-2">
+          <form method="post" id="addCatForm">
             <input type="hidden" name="action" value="add_cat">
-            <label class="form-label fw-bold">Add New Cat</label>
-            <div class="input-group">
-              <input type="text" name="new_cat_name" class="form-control" placeholder="Cat name" required>
-              <button class="btn btn-success" type="submit">➕ Add</button>
-            </div>
+            <label class="form-label fw-bold">&nbsp;</label>
+            <button class="btn btn-success w-100" type="submit" onclick="document.getElementById('addCatForm').submit()">➕ Add New Cat</button>
           </form>
         </div>
       </div>
     </div>
   </div>
+
+  <!-- Success Toast -->
+  {% if show_success %}
+  <div class="alert alert-success alert-dismissible fade show" role="alert" id="successToast">
+    <strong>✅ Success!</strong> Cat profile saved successfully.
+    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+  </div>
+  <script>
+    setTimeout(function() {
+      var toast = document.getElementById('successToast');
+      if (toast) {
+        var bsAlert = new bootstrap.Alert(toast);
+        bsAlert.close();
+      }
+    }, 3000);
+  </script>
+  {% endif %}
 
   {% if selected_cat_id and prof %}
   <!-- Cat Profile Display (Always Visible) -->
@@ -94,10 +108,27 @@
 
   <!-- Profile Edit Form -->
   <div class="card mb-3">
-    <div class="card-header bg-primary text-white">
-      <h5 class="mb-0">📝 Cat Profile Information</h5>
+    <div class="card-header bg-primary text-white" style="cursor: pointer;" onclick="toggleProfileSection()">
+      <div class="d-flex justify-content-between align-items-center">
+        <div class="d-flex align-items-center gap-3">
+          {% if prof and prof.profile_picture %}
+            <img src="{{ prof.profile_picture }}" alt="{{ prof.name or 'Cat' }}" class="cat-profile-picture" style="width: 50px; height: 50px;">
+          {% elif prof and prof.name %}
+            <div class="cat-profile-picture bg-light d-flex align-items-center justify-content-center" style="width: 50px; height: 50px; background-color: rgba(255,255,255,0.2)!important;">
+              <span style="font-size: 1.5rem;">🐱</span>
+            </div>
+          {% endif %}
+          <h5 class="mb-0">
+            📝 Cat Profile Information
+            {% if prof and prof.name %}
+              - <span>{{ prof.name }}</span>
+            {% endif %}
+          </h5>
+        </div>
+        <span id="profileToggleIcon">▼</span>
+      </div>
     </div>
-    <div class="card-body">
+    <div class="card-body" id="profileSection" {% if not expand_profile and prof and prof.name %}style="display: none;"{% endif %}>
       <form method="post" enctype="multipart/form-data" class="row g-3">
         <input type="hidden" name="action" value="save_profile">
         {% if selected_cat_id %}<input type="hidden" name="selected_cat_id" value="{{ selected_cat_id }}">{% endif %}
@@ -465,6 +496,31 @@
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script>
+// Toggle profile section
+function toggleProfileSection() {
+  const section = document.getElementById('profileSection');
+  const icon = document.getElementById('profileToggleIcon');
+  if (section.style.display === 'none') {
+    section.style.display = 'block';
+    icon.textContent = '▼';
+  } else {
+    section.style.display = 'none';
+    icon.textContent = '▶';
+  }
+}
+
+// Auto-collapse profile section if saved and has name
+{% if show_success and prof and prof.name %}
+  document.addEventListener('DOMContentLoaded', function() {
+    const section = document.getElementById('profileSection');
+    const icon = document.getElementById('profileToggleIcon');
+    if (section) {
+      section.style.display = 'none';
+      if (icon) icon.textContent = '▶';
+    }
+  });
+{% endif %}
+
 // Charts
 const trend = {{ trend|tojson }};
 const labels = trend.map(r => r.dt);
