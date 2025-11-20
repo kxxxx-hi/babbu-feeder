@@ -11,14 +11,14 @@ from dotenv import load_dotenv
 # Load environment variables
 load_dotenv()
 
-# Import GCS storage manager
+from .storage import BlobStorageManager
+
 try:
-    from .storage import CloudStorageManager
-    storage_manager = CloudStorageManager()
-    GCS_AVAILABLE = True
+    storage_manager = BlobStorageManager()
+    STORAGE_AVAILABLE = True
 except Exception as e:
-    print(f"Warning: Google Cloud Storage not available: {e}")
-    GCS_AVAILABLE = False
+    print(f"Warning: Blob storage not available: {e}")
+    STORAGE_AVAILABLE = False
     storage_manager = None
 
 # Fix template path for Vercel - templates are in parent directory
@@ -98,12 +98,17 @@ def kcal_split(total_kcal: float, meals_per_day: int, diet_list: List[dict], foo
         })
     return pd.DataFrame(out)
 
-# ---------- GCS Data helpers (Multi-cat support) ----------
+# ---------- Storage helpers (Multi-cat support) ----------
+CAT_PROFILE_PATH = "cat_profile/cat_profile.json"
+FOODS_PATH = "foods/foods.json"
+LOGS_PATH = "logs/logs.json"
+
+
 def get_all_cats():
     """Get all cat profiles from GCS"""
-    if not GCS_AVAILABLE:
+    if not STORAGE_AVAILABLE:
         return []
-    data = storage_manager.read_json("cat_profile")
+    data = storage_manager.read_json(CAT_PROFILE_PATH)
     cats = data.get("cats", [])
     # Ensure created_at exists for ordering
     for cat in cats:
@@ -114,7 +119,7 @@ def get_all_cats():
 
 def get_cat_profile(cat_id: str):
     """Get a specific cat profile by ID"""
-    if not GCS_AVAILABLE:
+    if not STORAGE_AVAILABLE:
         return None
     cats = get_all_cats()
     for cat in cats:
@@ -124,9 +129,9 @@ def get_cat_profile(cat_id: str):
 
 def save_cat_profile(cat_data: dict):
     """Save or update a cat profile"""
-    if not GCS_AVAILABLE:
+    if not STORAGE_AVAILABLE:
         return
-    data = storage_manager.read_json("cat_profile")
+    data = storage_manager.read_json(CAT_PROFILE_PATH)
     cats = data.get("cats", [])
     
     # Generate ID if new cat
@@ -152,23 +157,23 @@ def save_cat_profile(cat_data: dict):
         cats.append(cat_data)
     
     data["cats"] = cats
-    storage_manager.write_json(data, "cat_profile")
+    storage_manager.write_json(CAT_PROFILE_PATH, data)
     return cat_data["id"]
 
 def get_weights(cat_id: str):
     """Get weight logs for a specific cat"""
-    if not GCS_AVAILABLE:
+    if not STORAGE_AVAILABLE:
         return []
-    data = storage_manager.read_json("logs")
+    data = storage_manager.read_json(LOGS_PATH)
     weights_by_cat = data.get("weights_by_cat", {})
     weights = weights_by_cat.get(cat_id, [])
     return sorted(weights, key=lambda x: x.get("dt", ""))
 
 def save_weight(cat_id: str, weight_dt: str, weight_kg: float):
     """Save weight log for a specific cat"""
-    if not GCS_AVAILABLE:
+    if not STORAGE_AVAILABLE:
         return
-    data = storage_manager.read_json("logs")
+    data = storage_manager.read_json(LOGS_PATH)
     weights_by_cat = data.get("weights_by_cat", {})
     weights = weights_by_cat.get(cat_id, [])
     
@@ -185,21 +190,21 @@ def save_weight(cat_id: str, weight_dt: str, weight_kg: float):
     weights = sorted(weights, key=lambda x: x.get("dt", ""))
     weights_by_cat[cat_id] = weights
     data["weights_by_cat"] = weights_by_cat
-    storage_manager.write_json(data, "logs")
+    storage_manager.write_json(LOGS_PATH, data)
 
 def get_foods():
     """Get foods from GCS (shared across all cats)"""
-    if not GCS_AVAILABLE:
+    if not STORAGE_AVAILABLE:
         return []
-    data = storage_manager.read_json("foods")
+    data = storage_manager.read_json(FOODS_PATH)
     foods = data.get("foods", [])
     return sorted(foods, key=lambda x: x.get("name", ""))
 
 def save_food(food_data: dict):
     """Save food to GCS"""
-    if not GCS_AVAILABLE:
+    if not STORAGE_AVAILABLE:
         return
-    data = storage_manager.read_json("foods")
+    data = storage_manager.read_json(FOODS_PATH)
     foods = data.get("foods", [])
     
     # Generate ID if not present
@@ -209,42 +214,43 @@ def save_food(food_data: dict):
     
     foods.append(food_data)
     data["foods"] = foods
-    storage_manager.write_json(data, "foods")
+    storage_manager.write_json(FOODS_PATH, data)
 
 def delete_food(food_id: int):
     """Delete food from GCS"""
-    if not GCS_AVAILABLE:
+    if not STORAGE_AVAILABLE:
         return
-    data = storage_manager.read_json("foods")
+    data = storage_manager.read_json(FOODS_PATH)
     foods = data.get("foods", [])
     foods = [f for f in foods if f.get("id") != food_id]
     data["foods"] = foods
-    storage_manager.write_json(data, "foods")
+    storage_manager.write_json(FOODS_PATH, data)
 
 def get_diet(cat_id: str):
     """Get diet plan for a specific cat"""
-    if not GCS_AVAILABLE:
+    if not STORAGE_AVAILABLE:
         return []
-    data = storage_manager.read_json("cat_profile")
+    data = storage_manager.read_json(CAT_PROFILE_PATH)
     diets_by_cat = data.get("diets_by_cat", {})
     return diets_by_cat.get(cat_id, [])
 
+
 def save_diet(cat_id: str, diet_list: List[dict]):
     """Save diet plan for a specific cat"""
-    if not GCS_AVAILABLE:
+    if not STORAGE_AVAILABLE:
         return
-    data = storage_manager.read_json("cat_profile")
+    data = storage_manager.read_json(CAT_PROFILE_PATH)
     diets_by_cat = data.get("diets_by_cat", {})
     diets_by_cat[cat_id] = diet_list
     data["diets_by_cat"] = diets_by_cat
-    storage_manager.write_json(data, "cat_profile")
+    storage_manager.write_json(CAT_PROFILE_PATH, data)
 
 # ---------- Routes ----------
 @app.route("/", methods=["GET", "POST"])
 def home():
-    if not GCS_AVAILABLE:
+    if not STORAGE_AVAILABLE:
         return render_template("index.html", 
-            error="Google Cloud Storage not configured. Please set up GCS_BUCKET_NAME and credentials.",
+            error="Blob storage not configured. Please set VERCEL_BLOB_WRITE_TOKEN and redeploy.",
             cats=[], selected_cat_id=None, prof=None, age_weeks=0, stage="", latest_w=None, daily_kcal=None,
             weights_list=[], per_meal=[], foods=[], diet_map={}, total_pct=0.0, trend=[])
     
@@ -474,19 +480,19 @@ def home():
 # Health check
 @app.route("/api/health")
 def health():
-    return {"ok": True, "gcs_available": GCS_AVAILABLE}
+    return {"ok": True, "storage_available": STORAGE_AVAILABLE}
 
 @app.route("/api/cats")
 def list_cats_api():
-    if not GCS_AVAILABLE:
-        return {"cats": [], "error": "Google Cloud Storage not configured"}, 503
+    if not STORAGE_AVAILABLE:
+        return {"cats": [], "error": "Blob storage not configured"}, 503
     return {"cats": get_all_cats()}
 
 @app.route("/api/cats/raw")
 def cats_raw():
-    if not GCS_AVAILABLE:
-        return {"profile": {}, "cats": [], "error": "Google Cloud Storage not configured"}, 503
-    data = storage_manager.read_json("cat_profile")
+    if not STORAGE_AVAILABLE:
+        return {"profile": {}, "cats": [], "error": "Blob storage not configured"}, 503
+    data = storage_manager.read_json(CAT_PROFILE_PATH)
     # Provide default keys for easier debugging
     data.setdefault("cats", [])
     data.setdefault("profile", {})
