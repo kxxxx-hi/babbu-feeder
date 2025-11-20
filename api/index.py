@@ -476,6 +476,22 @@ def home():
 def health():
     return {"ok": True, "gcs_available": GCS_AVAILABLE}
 
+@app.route("/api/cats")
+def list_cats_api():
+    if not GCS_AVAILABLE:
+        return {"cats": [], "error": "Google Cloud Storage not configured"}, 503
+    return {"cats": get_all_cats()}
+
+@app.route("/api/cats/raw")
+def cats_raw():
+    if not GCS_AVAILABLE:
+        return {"profile": {}, "cats": [], "error": "Google Cloud Storage not configured"}, 503
+    data = storage_manager.read_json("cat_profile")
+    # Provide default keys for easier debugging
+    data.setdefault("cats", [])
+    data.setdefault("profile", {})
+    return data
+
 # Simple test route
 @app.route("/test")
 def test():
