@@ -1,10 +1,11 @@
 import math
 import os
+import uuid
 from datetime import date, datetime
 from typing import Optional, Tuple, List
 
 import pandas as pd
-from flask import Flask, render_template, request, redirect, url_for
+from flask import Flask, render_template, request, redirect, url_for, session
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -23,6 +24,7 @@ except Exception as e:
 # Fix template path for Vercel - templates are in parent directory
 template_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'templates'))
 app = Flask(__name__, template_folder=template_dir)
+app.secret_key = os.getenv('SECRET_KEY', 'dev-secret-key-change-in-production')
 
 # Add custom Jinja2 filter for strftime
 @app.template_filter('strftime')
@@ -96,53 +98,64 @@ def kcal_split(total_kcal: float, meals_per_day: int, diet_list: List[dict], foo
         })
     return pd.DataFrame(out)
 
-# ---------- GCS Data helpers ----------
-def get_profile():
-    """Get cat profile from GCS"""
+# ---------- GCS Data helpers (Multi-cat support) ----------
+def get_all_cats():
+    """Get all cat profiles from GCS"""
     if not GCS_AVAILABLE:
-        return {
-            "id": 1,
-            "name": None,
-            "anchor_date": date.today().isoformat(),
-            "anchor_age_weeks": 8.0,
-            "meals_per_day": 3,
-            "life_stage_override": None
-        }
+        return []
     data = storage_manager.read_json("cat_profile")
-    profile = data.get("profile", {})
-    if not profile:
-        # Return default profile
-        return {
-            "id": 1,
-            "name": None,
-            "anchor_date": date.today().isoformat(),
-            "anchor_age_weeks": 8.0,
-            "meals_per_day": 3,
-            "life_stage_override": None
-        }
-    return profile
+    cats = data.get("cats", [])
+    return sorted(cats, key=lambda x: x.get("name", "") or "")
 
-def save_profile(profile_data: dict):
-    """Save cat profile to GCS"""
+def get_cat_profile(cat_id: str):
+    """Get a specific cat profile by ID"""
+    if not GCS_AVAILABLE:
+        return None
+    cats = get_all_cats()
+    for cat in cats:
+        if cat.get("id") == cat_id:
+            return cat
+    return None
+
+def save_cat_profile(cat_data: dict):
+    """Save or update a cat profile"""
     if not GCS_AVAILABLE:
         return
-    data = {"profile": profile_data}
+    data = storage_manager.read_json("cat_profile")
+    cats = data.get("cats", [])
+    
+    # Generate ID if new cat
+    if "id" not in cat_data or not cat_data["id"]:
+        cat_data["id"] = str(uuid.uuid4())
+    
+    # Update or add
+    cat_id = cat_data["id"]
+    existing_index = next((i for i, c in enumerate(cats) if c.get("id") == cat_id), None)
+    if existing_index is not None:
+        cats[existing_index] = cat_data
+    else:
+        cats.append(cat_data)
+    
+    data["cats"] = cats
     storage_manager.write_json(data, "cat_profile")
+    return cat_data["id"]
 
-def get_weights():
-    """Get weight logs from GCS"""
+def get_weights(cat_id: str):
+    """Get weight logs for a specific cat"""
     if not GCS_AVAILABLE:
         return []
     data = storage_manager.read_json("logs")
-    weights = data.get("weights", [])
+    weights_by_cat = data.get("weights_by_cat", {})
+    weights = weights_by_cat.get(cat_id, [])
     return sorted(weights, key=lambda x: x.get("dt", ""))
 
-def save_weight(weight_dt: str, weight_kg: float):
-    """Save weight log to GCS"""
+def save_weight(cat_id: str, weight_dt: str, weight_kg: float):
+    """Save weight log for a specific cat"""
     if not GCS_AVAILABLE:
         return
     data = storage_manager.read_json("logs")
-    weights = data.get("weights", [])
+    weights_by_cat = data.get("weights_by_cat", {})
+    weights = weights_by_cat.get(cat_id, [])
     
     # Remove existing entry for this date if exists
     weights = [w for w in weights if w.get("dt") != weight_dt]
@@ -155,11 +168,12 @@ def save_weight(weight_dt: str, weight_kg: float):
     
     # Sort by date
     weights = sorted(weights, key=lambda x: x.get("dt", ""))
-    data["weights"] = weights
+    weights_by_cat[cat_id] = weights
+    data["weights_by_cat"] = weights_by_cat
     storage_manager.write_json(data, "logs")
 
 def get_foods():
-    """Get foods from GCS"""
+    """Get foods from GCS (shared across all cats)"""
     if not GCS_AVAILABLE:
         return []
     data = storage_manager.read_json("foods")
@@ -192,22 +206,22 @@ def delete_food(food_id: int):
     data["foods"] = foods
     storage_manager.write_json(data, "foods")
 
-def get_diet():
-    """Get diet plan from GCS"""
+def get_diet(cat_id: str):
+    """Get diet plan for a specific cat"""
     if not GCS_AVAILABLE:
         return []
     data = storage_manager.read_json("cat_profile")
-    profile = data.get("profile", {})
-    return profile.get("diet", [])
+    diets_by_cat = data.get("diets_by_cat", {})
+    return diets_by_cat.get(cat_id, [])
 
-def save_diet(diet_list: List[dict]):
-    """Save diet plan to GCS"""
+def save_diet(cat_id: str, diet_list: List[dict]):
+    """Save diet plan for a specific cat"""
     if not GCS_AVAILABLE:
         return
     data = storage_manager.read_json("cat_profile")
-    profile = data.get("profile", {})
-    profile["diet"] = diet_list
-    data["profile"] = profile
+    diets_by_cat = data.get("diets_by_cat", {})
+    diets_by_cat[cat_id] = diet_list
+    data["diets_by_cat"] = diets_by_cat
     storage_manager.write_json(data, "cat_profile")
 
 # ---------- Routes ----------
@@ -216,26 +230,73 @@ def home():
     if not GCS_AVAILABLE:
         return render_template("index.html", 
             error="Google Cloud Storage not configured. Please set up GCS_BUCKET_NAME and credentials.",
-            prof={}, age_weeks=0, stage="", latest_w=None, daily_kcal=None,
+            cats=[], selected_cat_id=None, prof=None, age_weeks=0, stage="", latest_w=None, daily_kcal=None,
             weights_list=[], per_meal=[], foods=[], diet_map={}, total_pct=0.0, trend=[])
+    
+    # Get all cats for dropdown
+    all_cats = get_all_cats()
+    
+    # Get selected cat ID from form, session, or first cat
+    selected_cat_id = request.form.get("selected_cat_id") or session.get("selected_cat_id")
+    if not selected_cat_id and all_cats:
+        selected_cat_id = all_cats[0].get("id")
+    
+    # Save selected cat to session
+    if selected_cat_id:
+        session["selected_cat_id"] = selected_cat_id
     
     # Handle actions
     action = request.form.get("action")
 
-    if action == "save_profile":
-        prof = get_profile()
+    if action == "select_cat":
+        selected_cat_id = request.form.get("selected_cat_id")
+        if selected_cat_id:
+            session["selected_cat_id"] = selected_cat_id
+        return redirect(url_for("home"))
+
+    if action == "save_profile" and selected_cat_id:
+        prof = get_cat_profile(selected_cat_id) or {}
+        prof["id"] = selected_cat_id
         prof["name"] = request.form.get("name") or None
         prof["anchor_date"] = request.form.get("anchor_date") or date.today().isoformat()
         prof["anchor_age_weeks"] = float(request.form.get("anchor_age_weeks") or 8.0)
         prof["meals_per_day"] = int(request.form.get("meals_per_day") or 3)
         prof["life_stage_override"] = request.form.get("life_stage_override") or None
-        save_profile(prof)
+        
+        # Handle image upload
+        if 'profile_picture' in request.files:
+            file = request.files['profile_picture']
+            if file and file.filename:
+                # Get file extension
+                ext = os.path.splitext(file.filename)[1].lower()
+                if ext in ['.jpg', '.jpeg', '.png', '.gif']:
+                    filename = f"{selected_cat_id}{ext}"
+                    image_data = file.read()
+                    image_url = storage_manager.upload_image(image_data, filename, file.content_type)
+                    prof["profile_picture"] = image_url
+                    prof["profile_picture_filename"] = filename
+        
+        save_cat_profile(prof)
         return redirect(url_for("home"))
 
-    if action == "add_weight":
+    if action == "add_cat":
+        # Create new cat
+        new_cat = {
+            "id": str(uuid.uuid4()),
+            "name": request.form.get("new_cat_name") or "New Cat",
+            "anchor_date": date.today().isoformat(),
+            "anchor_age_weeks": 8.0,
+            "meals_per_day": 3,
+            "life_stage_override": None
+        }
+        cat_id = save_cat_profile(new_cat)
+        session["selected_cat_id"] = cat_id
+        return redirect(url_for("home"))
+
+    if action == "add_weight" and selected_cat_id:
         wdt = request.form.get("weight_dt") or date.today().isoformat()
         wkg = float(request.form.get("weight_kg"))
-        save_weight(wdt, wkg)
+        save_weight(selected_cat_id, wdt, wkg)
         return redirect(url_for("home"))
 
     if action == "add_food":
@@ -258,7 +319,7 @@ def home():
         delete_food(fid)
         return redirect(url_for("home"))
 
-    if action == "save_diet":
+    if action == "save_diet" and selected_cat_id:
         foods = get_foods()
         total = 0.0
         diet_list = []
@@ -275,14 +336,36 @@ def home():
             # fall through and show error on page
             pass
         else:
-            save_diet(diet_list)
+            save_diet(selected_cat_id, diet_list)
             return redirect(url_for("home"))
 
-    # Data for render
-    prof = get_profile()
-    weights_list = get_weights()
+    # Get selected cat profile
+    prof = get_cat_profile(selected_cat_id) if selected_cat_id else None
+    
+    # If no profile, create default
+    if not prof and selected_cat_id:
+        prof = {
+            "id": selected_cat_id,
+            "name": None,
+            "anchor_date": date.today().isoformat(),
+            "anchor_age_weeks": 8.0,
+            "meals_per_day": 3,
+            "life_stage_override": None
+        }
+    elif not prof:
+        prof = {
+            "id": None,
+            "name": None,
+            "anchor_date": date.today().isoformat(),
+            "anchor_age_weeks": 8.0,
+            "meals_per_day": 3,
+            "life_stage_override": None
+        }
+    
+    # Get data for selected cat
+    weights_list = get_weights(selected_cat_id) if selected_cat_id else []
     foods_list = get_foods()
-    diet_list = get_diet()
+    diet_list = get_diet(selected_cat_id) if selected_cat_id else []
 
     # Convert to DataFrames for compatibility
     weights_df = pd.DataFrame(weights_list) if weights_list else pd.DataFrame(columns=["dt", "weight_kg"])
@@ -320,6 +403,8 @@ def home():
 
     return render_template(
         "index.html",
+        cats=all_cats,
+        selected_cat_id=selected_cat_id,
         prof=prof,
         age_weeks=age_weeks,
         stage=stage,
@@ -352,4 +437,3 @@ def handle_error(error):
 
 # Vercel requires variable "app"
 # already defined: app = Flask(__name__)
-

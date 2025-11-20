@@ -136,4 +136,56 @@ class CloudStorageManager:
         except Exception as e:
             logger.error(f"Error deleting {file_path}: {e}")
             raise
+    
+    def upload_image(self, image_data: bytes, filename: str, content_type: str = "image/jpeg") -> str:
+        """
+        Upload an image file to bucket.
+        
+        Args:
+            image_data: Image file bytes
+            filename: Name for the file (will be stored in images/ directory)
+            content_type: MIME type of the image
+        
+        Returns:
+            Public URL of the uploaded image
+        """
+        file_path = f"images/{filename}"
+        try:
+            blob = self.bucket.blob(file_path)
+            blob.upload_from_string(image_data, content_type=content_type)
+            # Make blob publicly readable
+            try:
+                blob.make_public()
+            except:
+                # If make_public fails, return the path anyway
+                pass
+            logger.info(f"Successfully uploaded image to {file_path}")
+            return blob.public_url if hasattr(blob, 'public_url') else f"gs://{self.bucket_name}/{file_path}"
+        except Exception as e:
+            logger.error(f"Error uploading image {file_path}: {e}")
+            raise
+    
+    def get_image_url(self, filename: str) -> Optional[str]:
+        """
+        Get the public URL of an image.
+        
+        Args:
+            filename: Name of the image file
+        
+        Returns:
+            Public URL or None if not found
+        """
+        file_path = f"images/{filename}"
+        try:
+            blob = self.bucket.blob(file_path)
+            if blob.exists():
+                try:
+                    blob.make_public()
+                    return blob.public_url
+                except:
+                    return f"https://storage.googleapis.com/{self.bucket_name}/{file_path}"
+            return None
+        except Exception as e:
+            logger.error(f"Error getting image URL for {file_path}: {e}")
+            return None
 
