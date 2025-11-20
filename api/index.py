@@ -1,13 +1,24 @@
 import math
-import sqlite3
 import os
 from datetime import date, datetime
 from typing import Optional, Tuple, List
 
 import pandas as pd
 from flask import Flask, render_template, request, redirect, url_for
+from dotenv import load_dotenv
 
-DB_PATH = "/tmp/cat_feeder.db"  # Vercel fs: write to /tmp
+# Load environment variables
+load_dotenv()
+
+# Import GCS storage manager
+try:
+    from .storage import CloudStorageManager
+    storage_manager = CloudStorageManager()
+    GCS_AVAILABLE = True
+except Exception as e:
+    print(f"Warning: Google Cloud Storage not available: {e}")
+    GCS_AVAILABLE = False
+    storage_manager = None
 
 # Fix template path for Vercel - templates are in parent directory
 template_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'templates'))
@@ -19,75 +30,6 @@ def strftime_filter(date_format):
     """Custom filter to format current date/time"""
     from datetime import datetime
     return datetime.now().strftime(date_format)
-
-# ---------- DB ----------
-def get_conn():
-    conn = sqlite3.connect(DB_PATH, detect_types=sqlite3.PARSE_DECLTYPES, check_same_thread=False)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA foreign_keys = ON;")
-    return conn
-
-def init_db():
-    conn = get_conn()
-    cur = conn.cursor()
-    cur.execute("""
-    CREATE TABLE IF NOT EXISTS profile (
-        id INTEGER PRIMARY KEY CHECK (id=1),
-        name TEXT,
-        anchor_date TEXT NOT NULL,
-        anchor_age_weeks REAL NOT NULL,
-        meals_per_day INTEGER NOT NULL DEFAULT 3,
-        life_stage_override TEXT
-    );
-    """)
-    cur.execute("""
-    CREATE TABLE IF NOT EXISTS weights (
-        id INTEGER PRIMARY KEY,
-        dt TEXT NOT NULL UNIQUE,
-        weight_kg REAL NOT NULL
-    );
-    """)
-    cur.execute("""
-    CREATE TABLE IF NOT EXISTS foods (
-        id INTEGER PRIMARY KEY,
-        name TEXT NOT NULL UNIQUE,
-        unit TEXT NOT NULL CHECK(unit IN ('kcal_per_g','kcal_per_cup')),
-        kcal_per_unit REAL NOT NULL,
-        grams_per_cup REAL
-    );
-    """)
-    cur.execute("""
-    CREATE TABLE IF NOT EXISTS diet (
-        id INTEGER PRIMARY KEY,
-        food_id INTEGER NOT NULL,
-        pct_daily_kcal REAL NOT NULL,
-        FOREIGN KEY(food_id) REFERENCES foods(id) ON DELETE CASCADE
-    );
-    """)
-    conn.commit()
-    # Seed default profile if missing
-    cur.execute("SELECT COUNT(*) AS c FROM profile WHERE id=1;")
-    if cur.fetchone()["c"] == 0:
-        cur.execute(
-            "INSERT INTO profile(id, name, anchor_date, anchor_age_weeks, meals_per_day, life_stage_override) VALUES (1,?,?,?,?,?)",
-            (None, date.today().isoformat(), 8.0, 3, None)
-        )
-        conn.commit()
-    conn.close()
-
-# Initialize DB on first request instead of module load
-db_initialized = False
-
-def ensure_db():
-    global db_initialized
-    if not db_initialized:
-        try:
-            init_db()
-            db_initialized = True
-        except Exception as e:
-            print(f"Database initialization error: {e}")
-            # Try to continue anyway
-            pass
 
 # ---------- Math ----------
 def weeks_between(d1: date, d2: date) -> float:
@@ -120,27 +62,31 @@ def der_factor(stage: str) -> float:
 def der_kcal(weight_kg: float, stage: str) -> float:
     return rer_kcal(weight_kg) * der_factor(stage)
 
-def kcal_split(total_kcal: float, meals_per_day: int, diet_df: pd.DataFrame, foods_df: pd.DataFrame) -> pd.DataFrame:
-    if total_kcal <= 0 or meals_per_day <= 0 or diet_df.empty or foods_df.empty:
+def kcal_split(total_kcal: float, meals_per_day: int, diet_list: List[dict], foods_list: List[dict]) -> pd.DataFrame:
+    if total_kcal <= 0 or meals_per_day <= 0 or not diet_list or not foods_list:
         return pd.DataFrame(columns=["Food","pct","kcal_day","kcal_meal","qty_per_meal","unit","grams_per_meal"])
-    foods = foods_df.set_index("id")
+    
+    foods_dict = {f["id"]: f for f in foods_list}
     out = []
-    for _, r in diet_df.iterrows():
-        fid = int(r["food_id"])
-        pct = float(r["pct_daily_kcal"])
+    for diet_item in diet_list:
+        fid = int(diet_item["food_id"])
+        pct = float(diet_item["pct_daily_kcal"])
         kcal_day = total_kcal * pct / 100.0
         kcal_meal = kcal_day / meals_per_day
-        unit = foods.loc[fid, "unit"]
-        kpu = foods.loc[fid, "kcal_per_unit"]
+        food = foods_dict.get(fid)
+        if not food:
+            continue
+        unit = food["unit"]
+        kpu = float(food["kcal_per_unit"])
         qty_per_meal = kcal_meal / kpu if kpu > 0 else 0.0
         grams_pm = None
         if unit == "kcal_per_g":
             grams_pm = qty_per_meal
         elif unit == "kcal_per_cup":
-            gpc = foods.loc[fid, "grams_per_cup"]
+            gpc = food.get("grams_per_cup")
             grams_pm = qty_per_meal * gpc if gpc else None
         out.append({
-            "Food": foods.loc[fid, "name"],
+            "Food": food["name"],
             "pct": pct,
             "kcal_day": round(kcal_day, 1),
             "kcal_meal": round(kcal_meal, 1),
@@ -150,48 +96,146 @@ def kcal_split(total_kcal: float, meals_per_day: int, diet_df: pd.DataFrame, foo
         })
     return pd.DataFrame(out)
 
-# ---------- Data helpers ----------
-def fetch_df(q: str, params: tuple=()):
-    conn = get_conn()
-    df = pd.read_sql_query(q, conn, params=params)
-    conn.close()
-    return df
+# ---------- GCS Data helpers ----------
+def get_profile():
+    """Get cat profile from GCS"""
+    if not GCS_AVAILABLE:
+        return {
+            "id": 1,
+            "name": None,
+            "anchor_date": date.today().isoformat(),
+            "anchor_age_weeks": 8.0,
+            "meals_per_day": 3,
+            "life_stage_override": None
+        }
+    data = storage_manager.read_json("cat_profile")
+    profile = data.get("profile", {})
+    if not profile:
+        # Return default profile
+        return {
+            "id": 1,
+            "name": None,
+            "anchor_date": date.today().isoformat(),
+            "anchor_age_weeks": 8.0,
+            "meals_per_day": 3,
+            "life_stage_override": None
+        }
+    return profile
 
-def execute(q: str, params: tuple=()):
-    conn = get_conn()
-    conn.execute(q, params)
-    conn.commit()
-    conn.close()
+def save_profile(profile_data: dict):
+    """Save cat profile to GCS"""
+    if not GCS_AVAILABLE:
+        return
+    data = {"profile": profile_data}
+    storage_manager.write_json(data, "cat_profile")
 
-def executemany(q: str, rows: List[tuple]):
-    conn = get_conn()
-    conn.executemany(q, rows)
-    conn.commit()
-    conn.close()
+def get_weights():
+    """Get weight logs from GCS"""
+    if not GCS_AVAILABLE:
+        return []
+    data = storage_manager.read_json("logs")
+    weights = data.get("weights", [])
+    return sorted(weights, key=lambda x: x.get("dt", ""))
+
+def save_weight(weight_dt: str, weight_kg: float):
+    """Save weight log to GCS"""
+    if not GCS_AVAILABLE:
+        return
+    data = storage_manager.read_json("logs")
+    weights = data.get("weights", [])
+    
+    # Remove existing entry for this date if exists
+    weights = [w for w in weights if w.get("dt") != weight_dt]
+    
+    # Add new entry
+    weights.append({
+        "dt": weight_dt,
+        "weight_kg": weight_kg
+    })
+    
+    # Sort by date
+    weights = sorted(weights, key=lambda x: x.get("dt", ""))
+    data["weights"] = weights
+    storage_manager.write_json(data, "logs")
+
+def get_foods():
+    """Get foods from GCS"""
+    if not GCS_AVAILABLE:
+        return []
+    data = storage_manager.read_json("foods")
+    foods = data.get("foods", [])
+    return sorted(foods, key=lambda x: x.get("name", ""))
+
+def save_food(food_data: dict):
+    """Save food to GCS"""
+    if not GCS_AVAILABLE:
+        return
+    data = storage_manager.read_json("foods")
+    foods = data.get("foods", [])
+    
+    # Generate ID if not present
+    if "id" not in food_data or not food_data["id"]:
+        max_id = max([f.get("id", 0) for f in foods], default=0)
+        food_data["id"] = max_id + 1
+    
+    foods.append(food_data)
+    data["foods"] = foods
+    storage_manager.write_json(data, "foods")
+
+def delete_food(food_id: int):
+    """Delete food from GCS"""
+    if not GCS_AVAILABLE:
+        return
+    data = storage_manager.read_json("foods")
+    foods = data.get("foods", [])
+    foods = [f for f in foods if f.get("id") != food_id]
+    data["foods"] = foods
+    storage_manager.write_json(data, "foods")
+
+def get_diet():
+    """Get diet plan from GCS"""
+    if not GCS_AVAILABLE:
+        return []
+    data = storage_manager.read_json("cat_profile")
+    profile = data.get("profile", {})
+    return profile.get("diet", [])
+
+def save_diet(diet_list: List[dict]):
+    """Save diet plan to GCS"""
+    if not GCS_AVAILABLE:
+        return
+    data = storage_manager.read_json("cat_profile")
+    profile = data.get("profile", {})
+    profile["diet"] = diet_list
+    data["profile"] = profile
+    storage_manager.write_json(data, "cat_profile")
 
 # ---------- Routes ----------
 @app.route("/", methods=["GET", "POST"])
 def home():
-    # Initialize database on first request
-    ensure_db()
+    if not GCS_AVAILABLE:
+        return render_template("index.html", 
+            error="Google Cloud Storage not configured. Please set up GCS_BUCKET_NAME and credentials.",
+            prof={}, age_weeks=0, stage="", latest_w=None, daily_kcal=None,
+            weights_list=[], per_meal=[], foods=[], diet_map={}, total_pct=0.0, trend=[])
     
     # Handle actions
     action = request.form.get("action")
 
     if action == "save_profile":
-        name = request.form.get("name") or ""
-        anchor_date = request.form.get("anchor_date") or date.today().isoformat()
-        anchor_age_weeks = float(request.form.get("anchor_age_weeks") or 8.0)
-        mpd = int(request.form.get("meals_per_day") or 3)
-        lso = request.form.get("life_stage_override") or None
-        execute("UPDATE profile SET name=?, anchor_date=?, anchor_age_weeks=?, meals_per_day=?, life_stage_override=? WHERE id=1;",
-                (name, anchor_date, anchor_age_weeks, mpd, lso))
+        prof = get_profile()
+        prof["name"] = request.form.get("name") or None
+        prof["anchor_date"] = request.form.get("anchor_date") or date.today().isoformat()
+        prof["anchor_age_weeks"] = float(request.form.get("anchor_age_weeks") or 8.0)
+        prof["meals_per_day"] = int(request.form.get("meals_per_day") or 3)
+        prof["life_stage_override"] = request.form.get("life_stage_override") or None
+        save_profile(prof)
         return redirect(url_for("home"))
 
     if action == "add_weight":
         wdt = request.form.get("weight_dt") or date.today().isoformat()
         wkg = float(request.form.get("weight_kg"))
-        execute("INSERT OR REPLACE INTO weights(dt, weight_kg) VALUES (?,?);", (wdt, wkg))
+        save_weight(wdt, wkg)
         return redirect(url_for("home"))
 
     if action == "add_food":
@@ -200,53 +244,66 @@ def home():
         kpu = float(request.form.get("kcal_per_unit"))
         gpc_raw = request.form.get("grams_per_cup")
         gpc = float(gpc_raw) if gpc_raw else None
-        execute("INSERT INTO foods(name, unit, kcal_per_unit, grams_per_cup) VALUES (?,?,?,?);",
-                (name, unit, kpu, gpc))
+        food_data = {
+            "name": name,
+            "unit": unit,
+            "kcal_per_unit": kpu,
+            "grams_per_cup": gpc
+        }
+        save_food(food_data)
         return redirect(url_for("home"))
 
     if action == "delete_food":
         fid = int(request.form.get("del_food_id"))
-        execute("DELETE FROM foods WHERE id=?;", (fid,))
+        delete_food(fid)
         return redirect(url_for("home"))
 
     if action == "save_diet":
-        # rows like diet_pct_<food_id>
-        foods = fetch_df("SELECT id FROM foods ORDER BY name;")
+        foods = get_foods()
         total = 0.0
-        rows = []
-        for fid in foods["id"].tolist():
+        diet_list = []
+        for food in foods:
+            fid = food["id"]
             pct = float(request.form.get(f"diet_pct_{fid}", "0") or "0")
             total += pct
-            rows.append((int(fid), pct))
+            if pct > 0:
+                diet_list.append({
+                    "food_id": fid,
+                    "pct_daily_kcal": pct
+                })
         if round(total, 1) != 100.0:
             # fall through and show error on page
             pass
         else:
-            execute("DELETE FROM diet;")
-            executemany("INSERT INTO diet(food_id, pct_daily_kcal) VALUES (?,?);", rows)
+            save_diet(diet_list)
             return redirect(url_for("home"))
 
     # Data for render
-    prof = fetch_df("SELECT * FROM profile WHERE id=1;").iloc[0].to_dict()
-    weights = fetch_df("SELECT dt, weight_kg FROM weights ORDER BY dt;")
-    foods = fetch_df("SELECT * FROM foods ORDER BY name;")
-    diet = fetch_df("SELECT food_id, pct_daily_kcal FROM diet;")
+    prof = get_profile()
+    weights_list = get_weights()
+    foods_list = get_foods()
+    diet_list = get_diet()
+
+    # Convert to DataFrames for compatibility
+    weights_df = pd.DataFrame(weights_list) if weights_list else pd.DataFrame(columns=["dt", "weight_kg"])
+    foods_df = pd.DataFrame(foods_list) if foods_list else pd.DataFrame(columns=["id", "name", "unit", "kcal_per_unit", "grams_per_cup"])
+    diet_df = pd.DataFrame(diet_list) if diet_list else pd.DataFrame(columns=["food_id", "pct_daily_kcal"])
 
     age_weeks = current_age_weeks(date.fromisoformat(prof["anchor_date"]), float(prof["anchor_age_weeks"]))
-    stage = (prof["life_stage_override"] or "") or infer_life_stage(age_weeks)
+    stage = (prof.get("life_stage_override") or "") or infer_life_stage(age_weeks)
 
     latest_w = None
-    if not weights.empty:
-        latest_w = float(weights.iloc[-1]["weight_kg"])
+    if not weights_df.empty:
+        latest_w = float(weights_df.iloc[-1]["weight_kg"])
     daily_kcal = der_kcal(latest_w, stage) if latest_w else None
 
     # charts data
     trend = []
-    if not weights.empty:
-        for _, r in weights.iterrows():
+    if not weights_df.empty:
+        for _, r in weights_df.iterrows():
             dt = date.fromisoformat(r["dt"])
             age_w = float(prof["anchor_age_weeks"]) + weeks_between(date.fromisoformat(prof["anchor_date"]), dt)
-            stg = prof["life_stage_override"] or infer_life_stage(age_w)
+            stg = prof.get("life_stage_override") or infer_life_stage(age_w)
             kcal = der_kcal(float(r["weight_kg"]), stg)
             trend.append({
                 "dt": r["dt"],
@@ -255,12 +312,11 @@ def home():
             })
 
     per_meal = pd.DataFrame()
-    if daily_kcal and not diet.empty and not foods.empty:
-        per_meal = kcal_split(daily_kcal, int(prof["meals_per_day"]), diet, foods)
+    if daily_kcal and not diet_df.empty and not foods_df.empty:
+        per_meal = kcal_split(daily_kcal, int(prof["meals_per_day"]), diet_list, foods_list)
 
     # for diet form display
-    foods_list = foods.to_dict(orient="records")
-    diet_map = {int(r["food_id"]): float(r["pct_daily_kcal"]) for _, r in diet.iterrows()}
+    diet_map = {int(r["food_id"]): float(r["pct_daily_kcal"]) for _, r in diet_df.iterrows()} if not diet_df.empty else {}
 
     return render_template(
         "index.html",
@@ -269,7 +325,7 @@ def home():
         stage=stage,
         latest_w=latest_w,
         daily_kcal=daily_kcal,
-        weights_list=weights.to_dict(orient="records"),
+        weights_list=weights_list,
         per_meal=per_meal.to_dict(orient="records"),
         foods=foods_list,
         diet_map=diet_map,
@@ -280,7 +336,7 @@ def home():
 # Health check
 @app.route("/api/health")
 def health():
-    return {"ok": True}
+    return {"ok": True, "gcs_available": GCS_AVAILABLE}
 
 # Simple test route
 @app.route("/test")
@@ -296,3 +352,4 @@ def handle_error(error):
 
 # Vercel requires variable "app"
 # already defined: app = Flask(__name__)
+
