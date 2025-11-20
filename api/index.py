@@ -105,7 +105,12 @@ def get_all_cats():
         return []
     data = storage_manager.read_json("cat_profile")
     cats = data.get("cats", [])
-    return sorted(cats, key=lambda x: x.get("name", "") or "")
+    # Ensure created_at exists for ordering
+    for cat in cats:
+        if not cat.get("created_at"):
+            cat["created_at"] = datetime.utcnow().isoformat()
+    # Sort alphabetically for readability
+    return sorted(cats, key=lambda x: (x.get("name") or "").lower())
 
 def get_cat_profile(cat_id: str):
     """Get a specific cat profile by ID"""
@@ -131,6 +136,16 @@ def save_cat_profile(cat_data: dict):
     # Update or add
     cat_id = cat_data["id"]
     existing_index = next((i for i, c in enumerate(cats) if c.get("id") == cat_id), None)
+    # Preserve created_at for existing cat or set default
+    created_at = None
+    if existing_index is not None:
+        existing_cat = cats[existing_index]
+        created_at = existing_cat.get("created_at")
+    if not created_at:
+        created_at = cat_data.get("created_at") or datetime.utcnow().isoformat()
+    cat_data["created_at"] = created_at
+    cat_data["updated_at"] = datetime.utcnow().isoformat()
+
     if existing_index is not None:
         cats[existing_index] = cat_data
     else:
@@ -236,10 +251,11 @@ def home():
     # Get all cats for dropdown
     all_cats = get_all_cats()
     
-    # Get selected cat ID from form, session, or first cat
+    # Get selected cat ID from form, session, or latest cat
     selected_cat_id = request.form.get("selected_cat_id") or session.get("selected_cat_id")
     if not selected_cat_id and all_cats:
-        selected_cat_id = all_cats[0].get("id")
+        latest_cat = max(all_cats, key=lambda c: c.get("created_at", ""))
+        selected_cat_id = latest_cat.get("id")
     
     # Save selected cat to session
     if selected_cat_id:
@@ -254,20 +270,39 @@ def home():
             session["selected_cat_id"] = selected_cat_id
         return redirect(url_for("home"))
 
-    if action == "add_cat":
-        # Create new cat
+    if action == "create_cat":
+        new_cat_id = str(uuid.uuid4())
+        name = request.form.get("new_cat_name") or "New Cat"
+        anchor_date = request.form.get("new_cat_anchor_date") or date.today().isoformat()
+        anchor_age_weeks = float(request.form.get("new_cat_anchor_age_weeks") or 8.0)
+        meals_per_day = int(request.form.get("new_cat_meals_per_day") or 3)
+        life_stage = request.form.get("new_cat_life_stage") or None
+
         new_cat = {
-            "id": str(uuid.uuid4()),
-            "name": "New Cat",
-            "anchor_date": date.today().isoformat(),
-            "anchor_age_weeks": 8.0,
-            "meals_per_day": 3,
-            "life_stage_override": None
+            "id": new_cat_id,
+            "name": name,
+            "anchor_date": anchor_date,
+            "anchor_age_weeks": anchor_age_weeks,
+            "meals_per_day": meals_per_day,
+            "life_stage_override": life_stage,
+            "created_at": datetime.utcnow().isoformat()
         }
-        cat_id = save_cat_profile(new_cat)
-        session["selected_cat_id"] = cat_id
-        # Redirect with expand_profile parameter
-        return redirect(url_for("home") + "?expand_profile=true")
+
+        # Handle image upload
+        if 'new_cat_profile_picture' in request.files:
+            file = request.files['new_cat_profile_picture']
+            if file and file.filename:
+                ext = os.path.splitext(file.filename)[1].lower()
+                if ext in ['.jpg', '.jpeg', '.png', '.gif']:
+                    filename = f"{new_cat_id}{ext}"
+                    image_data = file.read()
+                    image_url = storage_manager.upload_image(image_data, filename, file.content_type)
+                    new_cat["profile_picture"] = image_url
+                    new_cat["profile_picture_filename"] = filename
+
+        save_cat_profile(new_cat)
+        session["selected_cat_id"] = new_cat_id
+        return redirect(url_for("home") + "?saved=true")
 
     if action == "save_profile":
         # Get or create cat ID
@@ -411,7 +446,11 @@ def home():
 
     # Get query parameters for UI state
     show_success = request.args.get('saved') == 'true'
-    expand_profile = request.args.get('expand_profile') == 'true'
+    profile_open = request.args.get('expand_profile') == 'true'
+    if not profile_open:
+        profile_open = not prof or not prof.get("name")
+    if show_success:
+        profile_open = False
     
     return render_template(
         "index.html",
@@ -429,7 +468,7 @@ def home():
         total_pct=sum(diet_map.values()) if diet_map else 0.0,
         trend=trend,
         show_success=show_success,
-        expand_profile=expand_profile
+        profile_open=profile_open
     )
 
 # Health check
