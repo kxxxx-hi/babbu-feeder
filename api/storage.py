@@ -46,7 +46,7 @@ class BlobStorageManager:
         if content_type:
             headers["Content-Type"] = content_type
         if disable_suffix:
-            headers["x-vercel-add-random-suffix"] = "0"
+            headers["x-vercel-blob-add-random-suffix"] = "0"
         return headers
 
     def _api_headers(self) -> Dict[str, str]:
@@ -160,7 +160,7 @@ class BlobStorageManager:
         try:
             resp = requests.put(
                 url,
-                params={"access": access, "addRandomSuffix": "false"},
+                params={"access": access},
                 headers=self._headers("application/json", disable_suffix=True),
                 data=payload,
             )
@@ -188,7 +188,7 @@ class BlobStorageManager:
         try:
             resp = requests.put(
                 url,
-                params={"access": "public", "addRandomSuffix": "false"},
+                params={"access": "public"},
                 headers=self._headers(content_type, disable_suffix=True),
                 data=image_data,
             )
