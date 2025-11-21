@@ -1,30 +1,31 @@
 import math
 import os
-import uuid
 from datetime import date, datetime
 from typing import Optional, Tuple, List
 
 import pandas as pd
-from flask import Flask, render_template, request, redirect, url_for, session
+from flask import Flask, render_template, request, redirect, url_for
 from dotenv import load_dotenv
 
 # Load environment variables
 load_dotenv()
 
-from .storage import BlobStorageManager
-
+# Import Vercel Blob storage manager
 try:
-    storage_manager = BlobStorageManager()
+    from .storage import CloudStorageManager
+    storage_manager = CloudStorageManager()
     STORAGE_AVAILABLE = True
+    print("Vercel Blob Storage initialized successfully")
 except Exception as e:
-    print(f"Warning: Blob storage not available: {e}")
+    print(f"Warning: Vercel Blob Storage not available: {e}")
+    import traceback
+    traceback.print_exc()
     STORAGE_AVAILABLE = False
     storage_manager = None
 
 # Fix template path for Vercel - templates are in parent directory
 template_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'templates'))
 app = Flask(__name__, template_folder=template_dir)
-app.secret_key = os.getenv('SECRET_KEY', 'dev-secret-key-change-in-production')
 
 # Add custom Jinja2 filter for strftime
 @app.template_filter('strftime')
@@ -98,254 +99,204 @@ def kcal_split(total_kcal: float, meals_per_day: int, diet_list: List[dict], foo
         })
     return pd.DataFrame(out)
 
-# ---------- Storage helpers (Multi-cat support) ----------
-CAT_PROFILE_PATH = "cat_profile/cat_profile.json"
-FOODS_PATH = "foods/foods.json"
-LOGS_PATH = "logs/logs.json"
+# ---------- Vercel Blob Data helpers ----------
+def get_profile():
+    """Get cat profile from Vercel Blob Storage"""
+    if not STORAGE_AVAILABLE:
+        print("Storage not available, returning default profile")
+        return {
+            "id": 1,
+            "name": None,
+            "anchor_date": date.today().isoformat(),
+            "anchor_age_weeks": 8.0,
+            "meals_per_day": 3,
+            "life_stage_override": None
+        }
+    try:
+        data = storage_manager.read_json("cat_profile")
+        print(f"Read data from blob: {data}")
+        profile = data.get("profile", {})
+        if not profile:
+            print("No profile found in blob data, returning default")
+            # Return default profile
+            return {
+                "id": 1,
+                "name": None,
+                "anchor_date": date.today().isoformat(),
+                "anchor_age_weeks": 8.0,
+                "meals_per_day": 3,
+                "life_stage_override": None
+            }
+        print(f"Found profile: {profile}")
+        return profile
+    except Exception as e:
+        print(f"Error reading profile: {e}")
+        import traceback
+        traceback.print_exc()
+        # Return default on error
+        return {
+            "id": 1,
+            "name": None,
+            "anchor_date": date.today().isoformat(),
+            "anchor_age_weeks": 8.0,
+            "meals_per_day": 3,
+            "life_stage_override": None
+        }
 
+def save_profile(profile_data: dict):
+    """Save cat profile to Vercel Blob Storage"""
+    if not STORAGE_AVAILABLE:
+        print("Storage not available, cannot save profile")
+        return
+    try:
+        data = {"profile": profile_data}
+        print(f"Saving profile: {profile_data}")
+        storage_manager.write_json(data, "cat_profile")
+        print("Profile saved successfully")
+    except Exception as e:
+        print(f"Error saving profile: {e}")
+        import traceback
+        traceback.print_exc()
 
-def get_all_cats():
-    """Get all cat profiles from GCS"""
+def get_weights():
+    """Get weight logs from Vercel Blob Storage"""
     if not STORAGE_AVAILABLE:
         return []
-    data = storage_manager.read_json(CAT_PROFILE_PATH)
-    cats = data.get("cats", [])
-    # Ensure created_at exists for ordering
-    for cat in cats:
-        if not cat.get("created_at"):
-            cat["created_at"] = datetime.utcnow().isoformat()
-    # Sort alphabetically for readability
-    return sorted(cats, key=lambda x: (x.get("name") or "").lower())
-
-def get_cat_profile(cat_id: str):
-    """Get a specific cat profile by ID"""
-    if not STORAGE_AVAILABLE:
-        return None
-    cats = get_all_cats()
-    for cat in cats:
-        if cat.get("id") == cat_id:
-            return cat
-    return None
-
-def save_cat_profile(cat_data: dict):
-    """Save or update a cat profile"""
-    if not STORAGE_AVAILABLE:
-        return
-    data = storage_manager.read_json(CAT_PROFILE_PATH)
-    cats = data.get("cats", [])
-    
-    # Generate ID if new cat
-    if "id" not in cat_data or not cat_data["id"]:
-        cat_data["id"] = str(uuid.uuid4())
-    
-    # Update or add
-    cat_id = cat_data["id"]
-    existing_index = next((i for i, c in enumerate(cats) if c.get("id") == cat_id), None)
-    # Preserve created_at for existing cat or set default
-    created_at = None
-    if existing_index is not None:
-        existing_cat = cats[existing_index]
-        created_at = existing_cat.get("created_at")
-    if not created_at:
-        created_at = cat_data.get("created_at") or datetime.utcnow().isoformat()
-    cat_data["created_at"] = created_at
-    cat_data["updated_at"] = datetime.utcnow().isoformat()
-
-    if existing_index is not None:
-        cats[existing_index] = cat_data
-    else:
-        cats.append(cat_data)
-    
-    data["cats"] = cats
-    storage_manager.write_json(CAT_PROFILE_PATH, data)
-    return cat_data["id"]
-
-def get_weights(cat_id: str):
-    """Get weight logs for a specific cat"""
-    if not STORAGE_AVAILABLE:
+    try:
+        data = storage_manager.read_json("logs")
+        weights = data.get("weights", [])
+        return sorted(weights, key=lambda x: x.get("dt", ""))
+    except Exception as e:
+        print(f"Error reading weights: {e}")
         return []
-    data = storage_manager.read_json(LOGS_PATH)
-    weights_by_cat = data.get("weights_by_cat", {})
-    weights = weights_by_cat.get(cat_id, [])
-    return sorted(weights, key=lambda x: x.get("dt", ""))
 
-def save_weight(cat_id: str, weight_dt: str, weight_kg: float):
-    """Save weight log for a specific cat"""
+def save_weight(weight_dt: str, weight_kg: float):
+    """Save weight log to Vercel Blob Storage"""
     if not STORAGE_AVAILABLE:
         return
-    data = storage_manager.read_json(LOGS_PATH)
-    weights_by_cat = data.get("weights_by_cat", {})
-    weights = weights_by_cat.get(cat_id, [])
-    
-    # Remove existing entry for this date if exists
-    weights = [w for w in weights if w.get("dt") != weight_dt]
-    
-    # Add new entry
-    weights.append({
-        "dt": weight_dt,
-        "weight_kg": weight_kg
-    })
-    
-    # Sort by date
-    weights = sorted(weights, key=lambda x: x.get("dt", ""))
-    weights_by_cat[cat_id] = weights
-    data["weights_by_cat"] = weights_by_cat
-    storage_manager.write_json(LOGS_PATH, data)
+    try:
+        data = storage_manager.read_json("logs")
+        weights = data.get("weights", [])
+        
+        # Remove existing entry for this date if exists
+        weights = [w for w in weights if w.get("dt") != weight_dt]
+        
+        # Add new entry
+        weights.append({
+            "dt": weight_dt,
+            "weight_kg": weight_kg
+        })
+        
+        # Sort by date
+        weights = sorted(weights, key=lambda x: x.get("dt", ""))
+        data["weights"] = weights
+        storage_manager.write_json(data, "logs")
+    except Exception as e:
+        print(f"Error saving weight: {e}")
+        import traceback
+        traceback.print_exc()
 
 def get_foods():
-    """Get foods from GCS (shared across all cats)"""
+    """Get foods from Vercel Blob Storage"""
     if not STORAGE_AVAILABLE:
         return []
-    data = storage_manager.read_json(FOODS_PATH)
-    foods = data.get("foods", [])
-    return sorted(foods, key=lambda x: x.get("name", ""))
+    try:
+        data = storage_manager.read_json("foods")
+        foods = data.get("foods", [])
+        return sorted(foods, key=lambda x: x.get("name", ""))
+    except Exception as e:
+        print(f"Error reading foods: {e}")
+        return []
 
 def save_food(food_data: dict):
-    """Save food to GCS"""
+    """Save food to Vercel Blob Storage"""
     if not STORAGE_AVAILABLE:
         return
-    data = storage_manager.read_json(FOODS_PATH)
-    foods = data.get("foods", [])
-    
-    # Generate ID if not present
-    if "id" not in food_data or not food_data["id"]:
-        max_id = max([f.get("id", 0) for f in foods], default=0)
-        food_data["id"] = max_id + 1
-    
-    foods.append(food_data)
-    data["foods"] = foods
-    storage_manager.write_json(FOODS_PATH, data)
+    try:
+        data = storage_manager.read_json("foods")
+        foods = data.get("foods", [])
+        
+        # Generate ID if not present
+        if "id" not in food_data or not food_data["id"]:
+            max_id = max([f.get("id", 0) for f in foods], default=0)
+            food_data["id"] = max_id + 1
+        
+        foods.append(food_data)
+        data["foods"] = foods
+        storage_manager.write_json(data, "foods")
+    except Exception as e:
+        print(f"Error saving food: {e}")
+        import traceback
+        traceback.print_exc()
 
 def delete_food(food_id: int):
-    """Delete food from GCS"""
+    """Delete food from Vercel Blob Storage"""
     if not STORAGE_AVAILABLE:
         return
-    data = storage_manager.read_json(FOODS_PATH)
-    foods = data.get("foods", [])
-    foods = [f for f in foods if f.get("id") != food_id]
-    data["foods"] = foods
-    storage_manager.write_json(FOODS_PATH, data)
+    try:
+        data = storage_manager.read_json("foods")
+        foods = data.get("foods", [])
+        foods = [f for f in foods if f.get("id") != food_id]
+        data["foods"] = foods
+        storage_manager.write_json(data, "foods")
+    except Exception as e:
+        print(f"Error deleting food: {e}")
+        import traceback
+        traceback.print_exc()
 
-def get_diet(cat_id: str):
-    """Get diet plan for a specific cat"""
+def get_diet():
+    """Get diet plan from Vercel Blob Storage"""
     if not STORAGE_AVAILABLE:
         return []
-    data = storage_manager.read_json(CAT_PROFILE_PATH)
-    diets_by_cat = data.get("diets_by_cat", {})
-    return diets_by_cat.get(cat_id, [])
+    try:
+        data = storage_manager.read_json("cat_profile")
+        profile = data.get("profile", {})
+        return profile.get("diet", [])
+    except Exception as e:
+        print(f"Error reading diet: {e}")
+        return []
 
-
-def save_diet(cat_id: str, diet_list: List[dict]):
-    """Save diet plan for a specific cat"""
+def save_diet(diet_list: List[dict]):
+    """Save diet plan to Vercel Blob Storage"""
     if not STORAGE_AVAILABLE:
         return
-    data = storage_manager.read_json(CAT_PROFILE_PATH)
-    diets_by_cat = data.get("diets_by_cat", {})
-    diets_by_cat[cat_id] = diet_list
-    data["diets_by_cat"] = diets_by_cat
-    storage_manager.write_json(CAT_PROFILE_PATH, data)
+    try:
+        data = storage_manager.read_json("cat_profile")
+        profile = data.get("profile", {})
+        profile["diet"] = diet_list
+        data["profile"] = profile
+        storage_manager.write_json(data, "cat_profile")
+    except Exception as e:
+        print(f"Error saving diet: {e}")
+        import traceback
+        traceback.print_exc()
 
 # ---------- Routes ----------
 @app.route("/", methods=["GET", "POST"])
 def home():
     if not STORAGE_AVAILABLE:
         return render_template("index.html", 
-            error="Blob storage not configured. Please set VERCEL_BLOB_WRITE_TOKEN and redeploy.",
-            cats=[], selected_cat_id=None, prof=None, age_weeks=0, stage="", latest_w=None, daily_kcal=None,
+            error="Vercel Blob Storage not configured. Please set up BLOB_READ_WRITE_TOKEN environment variable.",
+            prof={}, age_weeks=0, stage="", latest_w=None, daily_kcal=None,
             weights_list=[], per_meal=[], foods=[], diet_map={}, total_pct=0.0, trend=[])
-    
-    # Get all cats for dropdown
-    all_cats = get_all_cats()
-    
-    # Get selected cat ID from form, session, or latest cat
-    selected_cat_id = request.form.get("selected_cat_id") or session.get("selected_cat_id")
-    if not selected_cat_id and all_cats:
-        latest_cat = max(all_cats, key=lambda c: c.get("created_at", ""))
-        selected_cat_id = latest_cat.get("id")
-    
-    # Save selected cat to session
-    if selected_cat_id:
-        session["selected_cat_id"] = selected_cat_id
     
     # Handle actions
     action = request.form.get("action")
 
-    if action == "select_cat":
-        selected_cat_id = request.form.get("selected_cat_id")
-        if selected_cat_id:
-            session["selected_cat_id"] = selected_cat_id
-        return redirect(url_for("home"))
-
-    if action == "create_cat":
-        new_cat_id = str(uuid.uuid4())
-        name = request.form.get("new_cat_name") or "New Cat"
-        anchor_date = request.form.get("new_cat_anchor_date") or date.today().isoformat()
-        anchor_age_weeks = float(request.form.get("new_cat_anchor_age_weeks") or 8.0)
-        meals_per_day = int(request.form.get("new_cat_meals_per_day") or 3)
-        life_stage = request.form.get("new_cat_life_stage") or None
-
-        new_cat = {
-            "id": new_cat_id,
-            "name": name,
-            "anchor_date": anchor_date,
-            "anchor_age_weeks": anchor_age_weeks,
-            "meals_per_day": meals_per_day,
-            "life_stage_override": life_stage,
-            "created_at": datetime.utcnow().isoformat()
-        }
-
-        # Handle image upload
-        if 'new_cat_profile_picture' in request.files:
-            file = request.files['new_cat_profile_picture']
-            if file and file.filename:
-                ext = os.path.splitext(file.filename)[1].lower()
-                if ext in ['.jpg', '.jpeg', '.png', '.gif']:
-                    filename = f"{new_cat_id}{ext}"
-                    image_data = file.read()
-                    image_url = storage_manager.upload_image(image_data, filename, file.content_type)
-                    new_cat["profile_picture"] = image_url
-                    new_cat["profile_picture_filename"] = filename
-
-        save_cat_profile(new_cat)
-        session["selected_cat_id"] = new_cat_id
-        return redirect(url_for("home") + "?saved=true")
-
     if action == "save_profile":
-        # Get or create cat ID
-        if not selected_cat_id:
-            # Create new cat if none selected
-            selected_cat_id = str(uuid.uuid4())
-            session["selected_cat_id"] = selected_cat_id
-        
-        prof = get_cat_profile(selected_cat_id) or {}
-        prof["id"] = selected_cat_id
+        prof = get_profile()
         prof["name"] = request.form.get("name") or None
         prof["anchor_date"] = request.form.get("anchor_date") or date.today().isoformat()
         prof["anchor_age_weeks"] = float(request.form.get("anchor_age_weeks") or 8.0)
         prof["meals_per_day"] = int(request.form.get("meals_per_day") or 3)
         prof["life_stage_override"] = request.form.get("life_stage_override") or None
-        
-        # Handle image upload
-        if 'profile_picture' in request.files:
-            file = request.files['profile_picture']
-            if file and file.filename:
-                # Get file extension
-                ext = os.path.splitext(file.filename)[1].lower()
-                if ext in ['.jpg', '.jpeg', '.png', '.gif']:
-                    filename = f"{selected_cat_id}{ext}"
-                    image_data = file.read()
-                    image_url = storage_manager.upload_image(image_data, filename, file.content_type)
-                    prof["profile_picture"] = image_url
-                    prof["profile_picture_filename"] = filename
-        
-        save_cat_profile(prof)
-        # Redirect with success message and collapse profile
-        return redirect(url_for("home") + "?saved=true")
+        save_profile(prof)
+        return redirect(url_for("home"))
 
-    if action == "add_weight" and selected_cat_id:
+    if action == "add_weight":
         wdt = request.form.get("weight_dt") or date.today().isoformat()
         wkg = float(request.form.get("weight_kg"))
-        save_weight(selected_cat_id, wdt, wkg)
+        save_weight(wdt, wkg)
         return redirect(url_for("home"))
 
     if action == "add_food":
@@ -368,7 +319,7 @@ def home():
         delete_food(fid)
         return redirect(url_for("home"))
 
-    if action == "save_diet" and selected_cat_id:
+    if action == "save_diet":
         foods = get_foods()
         total = 0.0
         diet_list = []
@@ -385,36 +336,14 @@ def home():
             # fall through and show error on page
             pass
         else:
-            save_diet(selected_cat_id, diet_list)
+            save_diet(diet_list)
             return redirect(url_for("home"))
 
-    # Get selected cat profile
-    prof = get_cat_profile(selected_cat_id) if selected_cat_id else None
-    
-    # If no profile, create default
-    if not prof and selected_cat_id:
-        prof = {
-            "id": selected_cat_id,
-            "name": None,
-            "anchor_date": date.today().isoformat(),
-            "anchor_age_weeks": 8.0,
-            "meals_per_day": 3,
-            "life_stage_override": None
-        }
-    elif not prof:
-        prof = {
-            "id": None,
-            "name": None,
-            "anchor_date": date.today().isoformat(),
-            "anchor_age_weeks": 8.0,
-            "meals_per_day": 3,
-            "life_stage_override": None
-        }
-    
-    # Get data for selected cat
-    weights_list = get_weights(selected_cat_id) if selected_cat_id else []
+    # Data for render
+    prof = get_profile()
+    weights_list = get_weights()
     foods_list = get_foods()
-    diet_list = get_diet(selected_cat_id) if selected_cat_id else []
+    diet_list = get_diet()
 
     # Convert to DataFrames for compatibility
     weights_df = pd.DataFrame(weights_list) if weights_list else pd.DataFrame(columns=["dt", "weight_kg"])
@@ -450,18 +379,8 @@ def home():
     # for diet form display
     diet_map = {int(r["food_id"]): float(r["pct_daily_kcal"]) for _, r in diet_df.iterrows()} if not diet_df.empty else {}
 
-    # Get query parameters for UI state
-    show_success = request.args.get('saved') == 'true'
-    profile_open = request.args.get('expand_profile') == 'true'
-    if not profile_open:
-        profile_open = not prof or not prof.get("name")
-    if show_success:
-        profile_open = False
-    
     return render_template(
         "index.html",
-        cats=all_cats,
-        selected_cat_id=selected_cat_id,
         prof=prof,
         age_weeks=age_weeks,
         stage=stage,
@@ -472,31 +391,13 @@ def home():
         foods=foods_list,
         diet_map=diet_map,
         total_pct=sum(diet_map.values()) if diet_map else 0.0,
-        trend=trend,
-        show_success=show_success,
-        profile_open=profile_open
+        trend=trend
     )
 
 # Health check
 @app.route("/api/health")
 def health():
     return {"ok": True, "storage_available": STORAGE_AVAILABLE}
-
-@app.route("/api/cats")
-def list_cats_api():
-    if not STORAGE_AVAILABLE:
-        return {"cats": [], "error": "Blob storage not configured"}, 503
-    return {"cats": get_all_cats()}
-
-@app.route("/api/cats/raw")
-def cats_raw():
-    if not STORAGE_AVAILABLE:
-        return {"profile": {}, "cats": [], "error": "Blob storage not configured"}, 503
-    data = storage_manager.read_json(CAT_PROFILE_PATH)
-    # Provide default keys for easier debugging
-    data.setdefault("cats", [])
-    data.setdefault("profile", {})
-    return data
 
 # Simple test route
 @app.route("/test")
@@ -512,3 +413,4 @@ def handle_error(error):
 
 # Vercel requires variable "app"
 # already defined: app = Flask(__name__)
+
