@@ -17,15 +17,40 @@
     .table-sm td, .table-sm th { padding: .5rem; }
     .header-section {
       background: white;
-      border-bottom: 2px solid #e9ecef;
-      padding: 1.5rem 0;
-      margin-bottom: 2rem;
+      border-bottom: 1px solid #e5e7eb;
+      padding: 1.25rem 0 1.75rem;
+      margin-bottom: 1.5rem;
+    }
+    .header-section h2 {
+      font-weight: 600;
+      margin-bottom: 0.5rem;
+    }
+    .header-actions {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.75rem;
+    }
+    .cat-selector {
+      min-width: 230px;
+      padding: 0.55rem 2.5rem 0.55rem 0.85rem;
+      border-radius: 10px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.04);
+    }
+    .btn-add-cat {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      border-radius: 14px;
+      padding: 0.55rem 1.25rem;
+      font-weight: 600;
+      box-shadow: 0 3px 8px rgba(13,110,253,.25);
     }
     .cat-profile-card {
       background: white;
       border-radius: 12px;
-      padding: 1.5rem;
-      margin-bottom: 2rem;
+      padding: 1.75rem;
+      margin-bottom: 1.75rem;
       box-shadow: 0 2px 4px rgba(0,0,0,0.1);
     }
     .cat-profile-img {
@@ -44,8 +69,9 @@
     .stat-card {
       background: #f8f9fa;
       border-radius: 8px;
-      padding: 1rem;
+      padding: 1.15rem;
       text-align: center;
+      border: 1px solid #f0f2f5;
     }
     .stat-label {
       font-size: 0.875rem;
@@ -75,16 +101,41 @@
       color: #212529;
       margin-bottom: 1rem;
     }
+    .section-card {
+      background: #fff;
+      border-radius: 14px;
+      border: 1px solid #e5e7eb;
+      padding: 1.75rem;
+      box-shadow: 0 4px 16px rgba(15,23,42,0.04);
+    }
+    @media (max-width: 768px) {
+      .header-actions {
+        width: 100%;
+        flex-direction: column;
+        align-items: stretch;
+      }
+      .cat-selector {
+        width: 100%;
+      }
+      .btn-add-cat {
+        width: 100%;
+        justify-content: center;
+      }
+    }
   </style>
 </head>
 <body class="bg-light">
 <div class="container py-4">
   <!-- Header Section -->
   <div class="header-section">
-    <div class="d-flex justify-content-between align-items-center">
-      <h2 class="mb-0" style="font-weight: 600;">Cat Feeding Planner</h2>
-      <div class="d-flex gap-2 align-items-center">
-        <select class="form-select" id="catSelector" style="min-width: 200px;" onchange="window.location.href='?cat_id=' + this.value">
+    <div class="row align-items-center g-3">
+      <div class="col-lg-6 col-12">
+        <h2 class="mb-0">Cat Feeding Planner</h2>
+        <p class="text-muted mb-0">Track every cat’s meals, weights, and daily calories in one cozy workspace.</p>
+      </div>
+      <div class="col-lg-6 col-12">
+        <div class="header-actions justify-content-lg-end">
+          <select class="form-select cat-selector" id="catSelector" onchange="window.location.href='?cat_id=' + this.value">
           {% if cats|length > 0 %}
             {% for cat in cats %}
               <option value="{{ cat.id }}" {% if cat.id == cat_id %}selected{% endif %}>{{ cat.name }}</option>
@@ -93,12 +144,13 @@
             <option value="">No cats yet</option>
           {% endif %}
         </select>
-        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addCatModal">
-          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" style="margin-right: 0.25rem;">
-            <path d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4z"/>
-          </svg>
-          Add New Cat
-        </button>
+          <button class="btn btn-primary btn-add-cat" data-bs-toggle="modal" data-bs-target="#addCatModal">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+              <path d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4z"/>
+            </svg>
+            Add New Cat
+          </button>
+        </div>
       </div>
     </div>
   </div>
@@ -117,7 +169,7 @@
         <div class="cat-name">{{ selected_cat.name }}</div>
         <div class="text-muted mb-3">
           <strong>Birthday:</strong> {{ selected_cat.birthday if selected_cat.birthday else "Not set" }} &nbsp;|&nbsp;
-          <strong>Current Age:</strong> {{ "%.1f"|format(age_weeks) }} weeks &nbsp;|&nbsp;
+          <strong>Current Age:</strong> {{ age_display }} &nbsp;|&nbsp;
           <strong>Life Stage:</strong> {{ stage.replace("_", " ").title() }}
         </div>
         <div class="row g-3">
@@ -153,7 +205,7 @@
     <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#calc" type="button">Calculations</button></li>
   </ul>
 
-  <div class="tab-content border border-top-0 p-4 bg-white">
+  <div class="tab-content section-card mt-3">
     <!-- Dashboard -->
     <div class="tab-pane fade show active" id="dash">
       <h6>Per-Meal Feeding Plan</h6>
@@ -168,8 +220,6 @@
               <th>% Daily Calories</th>
               <th>Calories per Day</th>
               <th>Calories per Meal</th>
-              <th>Quantity per Meal</th>
-              <th>Unit</th>
               <th>Grams per Meal</th>
             </tr>
           </thead>
@@ -180,9 +230,7 @@
               <td class="kmono">{{ "%.1f"|format(r.pct) }}%</td>
               <td class="kmono">{{ "%.1f"|format(r.kcal_day) }} kcal</td>
               <td class="kmono">{{ "%.1f"|format(r.kcal_meal) }} kcal</td>
-              <td class="kmono">{{ "%.3f"|format(r.qty_per_meal) }}</td>
-              <td>{{ r.unit }}</td>
-              <td class="kmono">{{ r.grams_per_meal if r.grams_per_meal is not none else "—" }} g</td>
+              <td class="kmono">{{ "%.1f"|format(r.grams_per_meal) if r.grams_per_meal is not none else "—" }} g</td>
             </tr>
           {% endfor %}
           </tbody>
@@ -250,24 +298,13 @@
       <form method="post" class="row g-3 mb-4">
         <input type="hidden" name="action" value="add_food">
         <input type="hidden" name="cat_id" value="{{ cat_id }}">
-        <div class="col-md-3">
+        <div class="col-md-4">
           <label class="form-label">Food Name</label>
           <input name="food_name" class="form-control" required placeholder="e.g., Dry Cat Food">
         </div>
-        <div class="col-md-3">
-          <label class="form-label">Unit Type</label>
-          <select name="food_unit" class="form-select">
-            <option value="kcal_per_g">Calories per Gram</option>
-            <option value="kcal_per_cup">Calories per Cup</option>
-          </select>
-        </div>
-        <div class="col-md-3">
-          <label class="form-label">Calories per Unit</label>
-          <input type="number" step="0.1" name="kcal_per_unit" class="form-control" required placeholder="e.g., 3.5">
-        </div>
-        <div class="col-md-3">
-          <label class="form-label">Grams per Cup (if using cups)</label>
-          <input type="number" step="1" name="grams_per_cup" class="form-control" placeholder="e.g., 120">
+        <div class="col-md-4">
+          <label class="form-label">Calories per 1000 g</label>
+          <input type="number" step="1" min="1" name="kcal_per_kg" class="form-control" required placeholder="e.g., 3800">
         </div>
         <div class="col-12">
           <button class="btn btn-primary">Add Food</button>
@@ -282,9 +319,7 @@
             <tr>
               <th>ID</th>
               <th>Food Name</th>
-              <th>Unit Type</th>
-              <th>Calories per Unit</th>
-              <th>Grams per Cup</th>
+              <th>Calories per 1000 g</th>
               <th></th>
             </tr>
           </thead>
@@ -293,9 +328,7 @@
             <tr>
               <td class="kmono">{{ f.id }}</td>
               <td><strong>{{ f.name }}</strong></td>
-              <td>{{ f.unit.replace("_", " ").title() }}</td>
-              <td class="kmono">{{ "%.1f"|format(f.kcal_per_unit) }} kcal</td>
-              <td class="kmono">{{ f.grams_per_cup if f.grams_per_cup else "—" }} g</td>
+              <td class="kmono">{{ "%.0f"|format(f.kcal_per_kg or 0) }} kcal</td>
               <td>
                 <form method="post" class="d-inline">
                   <input type="hidden" name="action" value="delete_food">
@@ -307,7 +340,7 @@
             </tr>
           {% endfor %}
           {% if foods|length == 0 %}
-            <tr><td colspan="6" class="text-muted">No foods added yet</td></tr>
+            <tr><td colspan="4" class="text-muted">No foods added yet</td></tr>
           {% endif %}
           </tbody>
         </table>
@@ -438,7 +471,7 @@
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script>
 // Charts
-const trend = {{ trend|tojson }};
+const trend = JSON.parse('{{ trend|tojson|safe }}');
 const labels = trend.map(r => r.dt);
 const wdata  = trend.map(r => r.weight_kg);
 const kdata  = trend.map(r => r.der_kcal);

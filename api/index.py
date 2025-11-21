@@ -64,9 +64,62 @@ def der_factor(stage: str) -> float:
 def der_kcal(weight_kg: float, stage: str) -> float:
     return rer_kcal(weight_kg) * der_factor(stage)
 
+def format_age_display(age_weeks: float) -> str:
+    if age_weeks is None or age_weeks < 0:
+        return "—"
+    weeks = int(round(age_weeks))
+    if weeks < 12:
+        return f"{weeks} week{'s' if weeks != 1 else ''}"
+    if weeks < 52:
+        months = weeks // 4
+        rem_weeks = weeks % 4
+        parts = []
+        if months:
+            parts.append(f"{months} month{'s' if months != 1 else ''}")
+        if rem_weeks:
+            parts.append(f"{rem_weeks} week{'s' if rem_weeks != 1 else ''}")
+        return " ".join(parts) if parts else "0 months"
+    years = weeks // 52
+    rem_weeks = weeks % 52
+    months = rem_weeks // 4
+    parts = [f"{years} year{'s' if years != 1 else ''}"]
+    if months:
+        parts.append(f"{months} month{'s' if months != 1 else ''}")
+    return " ".join(parts)
+
+def calories_per_kg(food: dict) -> Optional[float]:
+    """Return calories per 1000 g for a food entry, converting legacy fields if needed."""
+    if not food:
+        return None
+    if food.get("kcal_per_kg"):
+        try:
+            return float(food["kcal_per_kg"])
+        except (ValueError, TypeError):
+            return None
+    # Legacy fields
+    unit = food.get("unit")
+    kpu = food.get("kcal_per_unit")
+    if not kpu:
+        return None
+    try:
+        kpu = float(kpu)
+    except (ValueError, TypeError):
+        return None
+    if unit == "kcal_per_g":
+        return kpu * 1000.0
+    if unit == "kcal_per_cup":
+        gpc = food.get("grams_per_cup")
+        if gpc:
+            try:
+                return (kpu / float(gpc)) * 1000.0
+            except (ValueError, TypeError):
+                return None
+    return None
+
+
 def kcal_split(total_kcal: float, meals_per_day: int, diet_list: List[dict], foods_list: List[dict]) -> pd.DataFrame:
     if total_kcal <= 0 or meals_per_day <= 0 or not diet_list or not foods_list:
-        return pd.DataFrame(columns=["Food","pct","kcal_day","kcal_meal","qty_per_meal","unit","grams_per_meal"])
+        return pd.DataFrame(columns=["Food","pct","kcal_day","kcal_meal","grams_per_meal"])
     
     foods_dict = {f["id"]: f for f in foods_list}
     out = []
@@ -78,23 +131,17 @@ def kcal_split(total_kcal: float, meals_per_day: int, diet_list: List[dict], foo
         food = foods_dict.get(fid)
         if not food:
             continue
-        unit = food["unit"]
-        kpu = float(food["kcal_per_unit"])
-        qty_per_meal = kcal_meal / kpu if kpu > 0 else 0.0
-        grams_pm = None
-        if unit == "kcal_per_g":
-            grams_pm = qty_per_meal
-        elif unit == "kcal_per_cup":
-            gpc = food.get("grams_per_cup")
-            grams_pm = qty_per_meal * gpc if gpc else None
+        kcal_per_kg = calories_per_kg(food)
+        if not kcal_per_kg or kcal_per_kg <= 0:
+            continue
+        # grams per meal = kcal_meal * 1000 / kcal_per_kg
+        grams_pm = (kcal_meal * 1000.0) / kcal_per_kg
         out.append({
             "Food": food["name"],
             "pct": pct,
             "kcal_day": round(kcal_day, 1),
             "kcal_meal": round(kcal_meal, 1),
-            "qty_per_meal": round(qty_per_meal, 3),
-            "unit": ("g" if unit=="kcal_per_g" else "cups"),
-            "grams_per_meal": None if grams_pm is None else round(grams_pm, 1),
+            "grams_per_meal": round(grams_pm, 1),
         })
     return pd.DataFrame(out)
 
@@ -256,6 +303,12 @@ def get_foods():
         if not data:
             return []
         foods = data.get("foods", [])
+        # ensure kcal_per_kg present
+        for food in foods:
+            if "kcal_per_kg" not in food or not food.get("kcal_per_kg"):
+                converted = calories_per_kg(food)
+                if converted:
+                    food["kcal_per_kg"] = round(converted, 1)
         return sorted(foods, key=lambda x: x.get("name", ""))
     except Exception as e:
         print(f"Error reading foods: {e}")
@@ -498,16 +551,15 @@ def home():
         return redirect(url_for("home", cat_id=cat_id))
 
     if action == "add_food":
-        name = request.form.get("food_name").strip()
-        unit = request.form.get("food_unit")
-        kpu = float(request.form.get("kcal_per_unit"))
-        gpc_raw = request.form.get("grams_per_cup")
-        gpc = float(gpc_raw) if gpc_raw else None
+        name = (request.form.get("food_name") or "").strip()
+        if not name:
+            return redirect(url_for("home", cat_id=cat_id) if cat_id else url_for("home"))
+        kcal_per_kg = float(request.form.get("kcal_per_kg"))
+        if kcal_per_kg <= 0:
+            return redirect(url_for("home", cat_id=cat_id) if cat_id else url_for("home"))
         food_data = {
             "name": name,
-            "unit": unit,
-            "kcal_per_unit": kpu,
-            "grams_per_cup": gpc
+            "kcal_per_kg": round(kcal_per_kg, 1)
         }
         save_food(food_data)
         return redirect(url_for("home", cat_id=cat_id) if cat_id else url_for("home"))
@@ -576,6 +628,7 @@ def home():
             age_weeks = 0.0
     
     stage = (selected_cat.get("life_stage_override") or "") or infer_life_stage(age_weeks)
+    age_display = format_age_display(age_weeks)
 
     latest_w = None
     if not weights_df.empty:
@@ -613,6 +666,7 @@ def home():
         selected_cat=selected_cat,
         cat_id=cat_id,
         age_weeks=age_weeks,
+        age_display=age_display,
         stage=stage,
         latest_w=latest_w,
         daily_kcal=daily_kcal,
