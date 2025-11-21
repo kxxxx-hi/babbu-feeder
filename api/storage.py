@@ -20,7 +20,7 @@ class VercelBlobStorage:
         }
     
     def read_json(self, key: str) -> Dict[str, Any]:
-        """Read JSON data from Vercel Blob Storage - simplified direct approach"""
+        """Read JSON data from Vercel Blob Storage - handles Vercel's blob naming with suffixes"""
         try:
             if not self.token:
                 print("Warning: BLOB_READ_WRITE_TOKEN not set, returning empty data")
@@ -28,38 +28,70 @@ class VercelBlobStorage:
             
             headers = self._get_headers()
             
-            # Try direct GET first - this is the most reliable method
+            # First, try direct GET with exact key
             get_url = f"{self.base_url}/{key}"
             get_response = requests.get(get_url, headers=headers, timeout=10)
             
             if get_response.status_code == 200:
                 try:
-                    # Check if response contains JSON directly or a URL
-                    content_type = get_response.headers.get('content-type', '')
+                    data = get_response.json()
+                    # If it's a blob metadata response with a URL, fetch the actual content
+                    if isinstance(data, dict) and 'url' in data and 'pathname' not in data:
+                        blob_url = data['url']
+                        content_response = requests.get(blob_url, timeout=10)
+                        if content_response.status_code == 200:
+                            return content_response.json()
+                    # Otherwise return the JSON directly
+                    return data
+                except json.JSONDecodeError:
+                    return {}
+            
+            # If direct GET failed, try listing blobs with prefix to find the actual blob name
+            # Vercel adds suffixes like "cat_1-WKPOdFhzsxYCyekIoznwu0u5B9u7Kj"
+            if get_response.status_code == 404:
+                print(f"Blob {key} not found directly, trying prefix search...")
+                # List blobs with the prefix
+                list_url = f"{self.base_url}/list"
+                params = {"prefix": key}
+                list_response = requests.get(list_url, headers=headers, params=params, timeout=10)
+                
+                if list_response.status_code == 200:
+                    result = list_response.json()
+                    blobs = result.get("blobs", [])
                     
-                    # Try to parse as JSON
-                    try:
-                        data = get_response.json()
-                        # If it's a blob metadata response with a URL, fetch the actual content
-                        if isinstance(data, dict) and 'url' in data and 'pathname' not in data:
-                            blob_url = data['url']
+                    # Find exact match or closest match (blob name starting with key)
+                    matching_blob = None
+                    for blob in blobs:
+                        pathname = blob.get("pathname", "")
+                        # Check for exact match first
+                        if pathname == key:
+                            matching_blob = blob
+                            break
+                        # Check if pathname starts with key (handles suffixes)
+                        elif pathname.startswith(key + "-") or pathname.startswith(key + "/"):
+                            matching_blob = blob
+                            break
+                    
+                    if matching_blob:
+                        # Get the URL and fetch content
+                        blob_url = matching_blob.get("url")
+                        if blob_url:
+                            print(f"Found blob with suffix: {matching_blob.get('pathname')}, fetching from {blob_url}")
                             content_response = requests.get(blob_url, timeout=10)
                             if content_response.status_code == 200:
-                                return content_response.json()
-                        # Otherwise return the JSON directly
-                        return data
-                    except json.JSONDecodeError:
-                        # If not JSON, might be text content
-                        return {}
-                except Exception as e:
-                    print(f"Error parsing response: {e}")
-                    return {}
-            elif get_response.status_code == 404:
-                # Blob doesn't exist yet, return empty dict
-                return {}
-            else:
-                print(f"Error reading blob {key}: HTTP {get_response.status_code}")
-                return {}
+                                try:
+                                    data = content_response.json()
+                                    print(f"Successfully read JSON from blob {matching_blob.get('pathname')}")
+                                    return data
+                                except json.JSONDecodeError as e:
+                                    print(f"Error parsing JSON from blob: {e}")
+                                    print(f"Response text (first 500 chars): {content_response.text[:500]}")
+                                    return {}
+                    else:
+                        print(f"No blob found with prefix '{key}'")
+            
+            # Blob doesn't exist
+            return {}
                 
         except requests.exceptions.RequestException as e:
             print(f"Network error reading from Vercel Blob: {e}")
