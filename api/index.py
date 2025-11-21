@@ -4,6 +4,7 @@ from datetime import date, datetime
 from typing import Optional, Tuple, List
 
 import pandas as pd
+import requests
 from flask import Flask, render_template, request, redirect, url_for
 from dotenv import load_dotenv
 
@@ -99,83 +100,121 @@ def kcal_split(total_kcal: float, meals_per_day: int, diet_list: List[dict], foo
         })
     return pd.DataFrame(out)
 
-# ---------- Vercel Blob Data helpers ----------
-def get_profile():
-    """Get cat profile from Vercel Blob Storage"""
-    if not STORAGE_AVAILABLE:
-        print("Storage not available, returning default profile")
-        return {
-            "id": 1,
-            "name": None,
-            "anchor_date": date.today().isoformat(),
-            "anchor_age_weeks": 8.0,
-            "meals_per_day": 3,
-            "life_stage_override": None
-        }
-    try:
-        data = storage_manager.read_json("cat_profile")
-        print(f"Read data from blob: {data}")
-        profile = data.get("profile", {})
-        if not profile:
-            print("No profile found in blob data, returning default")
-            # Return default profile
-            return {
-                "id": 1,
-                "name": None,
-                "anchor_date": date.today().isoformat(),
-                "anchor_age_weeks": 8.0,
-                "meals_per_day": 3,
-                "life_stage_override": None
-            }
-        print(f"Found profile: {profile}")
-        return profile
-    except Exception as e:
-        print(f"Error reading profile: {e}")
-        import traceback
-        traceback.print_exc()
-        # Return default on error
-        return {
-            "id": 1,
-            "name": None,
-            "anchor_date": date.today().isoformat(),
-            "anchor_age_weeks": 8.0,
-            "meals_per_day": 3,
-            "life_stage_override": None
-        }
-
-def save_profile(profile_data: dict):
-    """Save cat profile to Vercel Blob Storage"""
-    if not STORAGE_AVAILABLE:
-        print("Storage not available, cannot save profile")
-        return
-    try:
-        data = {"profile": profile_data}
-        print(f"Saving profile: {profile_data}")
-        storage_manager.write_json(data, "cat_profile")
-        print("Profile saved successfully")
-    except Exception as e:
-        print(f"Error saving profile: {e}")
-        import traceback
-        traceback.print_exc()
-
-def get_weights():
-    """Get weight logs from Vercel Blob Storage"""
+# ---------- Vercel Blob Data helpers - Multiple Cats Support ----------
+def get_all_cats():
+    """Get list of all cats"""
     if not STORAGE_AVAILABLE:
         return []
     try:
-        data = storage_manager.read_json("logs")
+        data = storage_manager.read_json("cats")
+        cats = data.get("cats", [])
+        # Sort by created_at descending (newest first)
+        return sorted(cats, key=lambda x: x.get("created_at", ""), reverse=True)
+    except Exception as e:
+        print(f"Error reading cats list: {e}")
+        return []
+
+def get_cat(cat_id: int):
+    """Get full cat data including profile and weights"""
+    if not STORAGE_AVAILABLE:
+        return None
+    try:
+        data = storage_manager.read_json(f"cat_{cat_id}_data")
+        return data
+    except Exception as e:
+        print(f"Error reading cat {cat_id}: {e}")
+        return None
+
+def save_cat(cat_data: dict):
+    """Save or update a cat"""
+    if not STORAGE_AVAILABLE:
+        return None
+    try:
+        # Get all cats
+        all_cats_data = storage_manager.read_json("cats")
+        cats = all_cats_data.get("cats", [])
+        
+        cat_id = cat_data.get("id")
+        existing_data = None
+        if cat_id:
+            # Get existing data to preserve weights and diet
+            existing_data = get_cat(cat_id)
+        
+        if not cat_id:
+            # New cat - generate ID
+            max_id = max([c.get("id", 0) for c in cats], default=0)
+            cat_id = max_id + 1
+            cat_data["id"] = cat_id
+            cat_data["created_at"] = datetime.now().isoformat()
+            # Add to cats list
+            cats.append({
+                "id": cat_id,
+                "name": cat_data.get("name", "Unnamed Cat"),
+                "birthday": cat_data.get("birthday"),
+                "profile_pic_url": cat_data.get("profile_pic_url"),
+                "created_at": cat_data["created_at"]
+            })
+        else:
+            # Update existing cat in list
+            for i, c in enumerate(cats):
+                if c.get("id") == cat_id:
+                    # Update basic info
+                    cats[i].update({
+                        "name": cat_data.get("name", "Unnamed Cat"),
+                        "birthday": cat_data.get("birthday"),
+                        "profile_pic_url": cat_data.get("profile_pic_url", cats[i].get("profile_pic_url")),
+                        "updated_at": datetime.now().isoformat()
+                    })
+                    break
+        
+        # Save cats list
+        all_cats_data["cats"] = cats
+        storage_manager.write_json(all_cats_data, "cats")
+        
+        # Save full cat data - preserve existing weights and diet if updating
+        full_data = {
+            "id": cat_id,
+            "name": cat_data.get("name", "Unnamed Cat"),
+            "birthday": cat_data.get("birthday"),
+            "profile_pic_url": cat_data.get("profile_pic_url") or (existing_data.get("profile_pic_url") if existing_data else None),
+            "anchor_date": cat_data.get("anchor_date") or (existing_data.get("anchor_date") if existing_data else date.today().isoformat()),
+            "anchor_age_weeks": cat_data.get("anchor_age_weeks") if "anchor_age_weeks" in cat_data else (existing_data.get("anchor_age_weeks") if existing_data else 8.0),
+            "meals_per_day": cat_data.get("meals_per_day") if "meals_per_day" in cat_data else (existing_data.get("meals_per_day") if existing_data else 3),
+            "life_stage_override": cat_data.get("life_stage_override") if "life_stage_override" in cat_data else (existing_data.get("life_stage_override") if existing_data else None),
+            "weights": cat_data.get("weights") if "weights" in cat_data else (existing_data.get("weights", []) if existing_data else []),
+            "diet": cat_data.get("diet") if "diet" in cat_data else (existing_data.get("diet", []) if existing_data else [])
+        }
+        storage_manager.write_json(full_data, f"cat_{cat_id}_data")
+        
+        return cat_id
+    except Exception as e:
+        print(f"Error saving cat: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
+
+def get_weights(cat_id: int):
+    """Get weight logs for a specific cat"""
+    if not STORAGE_AVAILABLE:
+        return []
+    try:
+        data = get_cat(cat_id)
+        if not data:
+            return []
         weights = data.get("weights", [])
         return sorted(weights, key=lambda x: x.get("dt", ""))
     except Exception as e:
         print(f"Error reading weights: {e}")
         return []
 
-def save_weight(weight_dt: str, weight_kg: float):
-    """Save weight log to Vercel Blob Storage"""
+def save_weight(cat_id: int, weight_dt: str, weight_kg: float):
+    """Save weight log for a specific cat"""
     if not STORAGE_AVAILABLE:
         return
     try:
-        data = storage_manager.read_json("logs")
+        data = get_cat(cat_id)
+        if not data:
+            data = {}
         weights = data.get("weights", [])
         
         # Remove existing entry for this date if exists
@@ -190,7 +229,7 @@ def save_weight(weight_dt: str, weight_kg: float):
         # Sort by date
         weights = sorted(weights, key=lambda x: x.get("dt", ""))
         data["weights"] = weights
-        storage_manager.write_json(data, "logs")
+        storage_manager.write_json(data, f"cat_{cat_id}_data")
     except Exception as e:
         print(f"Error saving weight: {e}")
         import traceback
@@ -244,32 +283,78 @@ def delete_food(food_id: int):
         import traceback
         traceback.print_exc()
 
-def get_diet():
-    """Get diet plan from Vercel Blob Storage"""
+def get_diet(cat_id: int):
+    """Get diet plan for a specific cat"""
     if not STORAGE_AVAILABLE:
         return []
     try:
-        data = storage_manager.read_json("cat_profile")
-        profile = data.get("profile", {})
-        return profile.get("diet", [])
+        data = get_cat(cat_id)
+        if not data:
+            return []
+        return data.get("diet", [])
     except Exception as e:
         print(f"Error reading diet: {e}")
         return []
 
-def save_diet(diet_list: List[dict]):
-    """Save diet plan to Vercel Blob Storage"""
+def save_diet(cat_id: int, diet_list: List[dict]):
+    """Save diet plan for a specific cat"""
     if not STORAGE_AVAILABLE:
         return
     try:
-        data = storage_manager.read_json("cat_profile")
-        profile = data.get("profile", {})
-        profile["diet"] = diet_list
-        data["profile"] = profile
-        storage_manager.write_json(data, "cat_profile")
+        data = get_cat(cat_id)
+        if not data:
+            data = {}
+        data["diet"] = diet_list
+        storage_manager.write_json(data, f"cat_{cat_id}_data")
     except Exception as e:
         print(f"Error saving diet: {e}")
         import traceback
         traceback.print_exc()
+
+# Helper function to upload image to Vercel Blob
+def upload_image_to_blob(file, filename: str) -> Optional[str]:
+    """Upload image file to Vercel Blob and return URL"""
+    if not STORAGE_AVAILABLE or not file:
+        return None
+    try:
+        # Read file content
+        file_content = file.read()
+        # Determine content type
+        content_type = file.content_type or "image/jpeg"
+        if filename.lower().endswith('.png'):
+            content_type = "image/png"
+        elif filename.lower().endswith('.gif'):
+            content_type = "image/gif"
+        
+        # Upload to Vercel Blob
+        blob_key = f"cat_images/{filename}"
+        token = storage_manager.token
+        if not token:
+            print("No blob token available")
+            return None
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": content_type,
+        }
+        response = requests.put(
+            f"{storage_manager.base_url}/{blob_key}",
+            headers=headers,
+            data=file_content,
+            timeout=30
+        )
+        
+        if response.status_code in [200, 201]:
+            result = response.json()
+            return result.get("url")
+        else:
+            print(f"Error uploading image: HTTP {response.status_code}")
+            print(f"Response: {response.text[:200]}")
+            return None
+    except Exception as e:
+        print(f"Error uploading image: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
 
 # ---------- Routes ----------
 @app.route("/", methods=["GET", "POST"])
@@ -277,27 +362,85 @@ def home():
     if not STORAGE_AVAILABLE:
         return render_template("index.html", 
             error="Vercel Blob Storage not configured. Please set up BLOB_READ_WRITE_TOKEN environment variable.",
-            prof={}, age_weeks=0, stage="", latest_w=None, daily_kcal=None,
+            cats=[], selected_cat=None, age_weeks=0, stage="", latest_w=None, daily_kcal=None,
             weights_list=[], per_meal=[], foods=[], diet_map={}, total_pct=0.0, trend=[])
+    
+    # Get all cats
+    all_cats = get_all_cats()
+    
+    # Get selected cat ID from query param or form, default to latest
+    cat_id = None
+    if request.args.get("cat_id"):
+        cat_id = int(request.args.get("cat_id"))
+    elif request.form.get("cat_id"):
+        cat_id = int(request.form.get("cat_id"))
+    elif all_cats:
+        cat_id = all_cats[0].get("id")  # Latest cat
     
     # Handle actions
     action = request.form.get("action")
 
-    if action == "save_profile":
-        prof = get_profile()
-        prof["name"] = request.form.get("name") or None
-        prof["anchor_date"] = request.form.get("anchor_date") or date.today().isoformat()
-        prof["anchor_age_weeks"] = float(request.form.get("anchor_age_weeks") or 8.0)
-        prof["meals_per_day"] = int(request.form.get("meals_per_day") or 3)
-        prof["life_stage_override"] = request.form.get("life_stage_override") or None
-        save_profile(prof)
+    if action == "create_cat":
+        # Create new cat
+        name = request.form.get("cat_name", "").strip() or "Unnamed Cat"
+        birthday = request.form.get("birthday") or date.today().isoformat()
+        anchor_date = request.form.get("anchor_date") or birthday
+        anchor_age_weeks = float(request.form.get("anchor_age_weeks") or 0.0)
+        meals_per_day = int(request.form.get("meals_per_day") or 3)
+        life_stage_override = request.form.get("life_stage_override") or None
+        
+        # Handle profile picture upload
+        profile_pic_url = None
+        if "profile_pic" in request.files:
+            file = request.files["profile_pic"]
+            if file.filename:
+                filename = f"{int(datetime.now().timestamp())}_{file.filename}"
+                profile_pic_url = upload_image_to_blob(file, filename)
+        
+        cat_data = {
+            "name": name,
+            "birthday": birthday,
+            "profile_pic_url": profile_pic_url,
+            "anchor_date": anchor_date,
+            "anchor_age_weeks": anchor_age_weeks,
+            "meals_per_day": meals_per_day,
+            "life_stage_override": life_stage_override,
+            "weights": [],
+            "diet": []
+        }
+        new_cat_id = save_cat(cat_data)
+        if new_cat_id:
+            return redirect(url_for("home", cat_id=new_cat_id))
         return redirect(url_for("home"))
 
-    if action == "add_weight":
+    if action == "update_profile" and cat_id:
+        # Update cat profile
+        cat_data = get_cat(cat_id)
+        if cat_data:
+            cat_data["name"] = request.form.get("cat_name", "").strip() or "Unnamed Cat"
+            cat_data["birthday"] = request.form.get("birthday") or date.today().isoformat()
+            cat_data["anchor_date"] = request.form.get("anchor_date") or cat_data["birthday"]
+            cat_data["anchor_age_weeks"] = float(request.form.get("anchor_age_weeks") or 0.0)
+            cat_data["meals_per_day"] = int(request.form.get("meals_per_day") or 3)
+            cat_data["life_stage_override"] = request.form.get("life_stage_override") or None
+            
+            # Handle profile picture upload
+            if "profile_pic" in request.files:
+                file = request.files["profile_pic"]
+                if file.filename:
+                    filename = f"{int(datetime.now().timestamp())}_{file.filename}"
+                    profile_pic_url = upload_image_to_blob(file, filename)
+                    if profile_pic_url:
+                        cat_data["profile_pic_url"] = profile_pic_url
+            
+            save_cat(cat_data)
+        return redirect(url_for("home", cat_id=cat_id))
+
+    if action == "add_weight" and cat_id:
         wdt = request.form.get("weight_dt") or date.today().isoformat()
         wkg = float(request.form.get("weight_kg"))
-        save_weight(wdt, wkg)
-        return redirect(url_for("home"))
+        save_weight(cat_id, wdt, wkg)
+        return redirect(url_for("home", cat_id=cat_id))
 
     if action == "add_food":
         name = request.form.get("food_name").strip()
@@ -312,14 +455,14 @@ def home():
             "grams_per_cup": gpc
         }
         save_food(food_data)
-        return redirect(url_for("home"))
+        return redirect(url_for("home", cat_id=cat_id) if cat_id else url_for("home"))
 
     if action == "delete_food":
         fid = int(request.form.get("del_food_id"))
         delete_food(fid)
-        return redirect(url_for("home"))
+        return redirect(url_for("home", cat_id=cat_id) if cat_id else url_for("home"))
 
-    if action == "save_diet":
+    if action == "save_diet" and cat_id:
         foods = get_foods()
         total = 0.0
         diet_list = []
@@ -332,26 +475,59 @@ def home():
                     "food_id": fid,
                     "pct_daily_kcal": pct
                 })
-        if round(total, 1) != 100.0:
-            # fall through and show error on page
-            pass
-        else:
-            save_diet(diet_list)
-            return redirect(url_for("home"))
+        if round(total, 1) == 100.0:
+            save_diet(cat_id, diet_list)
+        return redirect(url_for("home", cat_id=cat_id))
 
-    # Data for render
-    prof = get_profile()
-    weights_list = get_weights()
+    # Get selected cat data or use default
+    selected_cat = None
+    if cat_id:
+        selected_cat = get_cat(cat_id)
+    
+    # If no cat selected or found, create dummy data
+    if not selected_cat:
+        selected_cat = {
+            "id": None,
+            "name": "Unnamed Cat",
+            "birthday": date.today().isoformat(),
+            "profile_pic_url": None,
+            "anchor_date": date.today().isoformat(),
+            "anchor_age_weeks": 8.0,
+            "meals_per_day": 3,
+            "life_stage_override": None,
+            "weights": [],
+            "diet": []
+        }
+        cat_id = None
+
+    # Get data for selected cat
+    weights_list = get_weights(cat_id) if cat_id else []
     foods_list = get_foods()
-    diet_list = get_diet()
+    diet_list = get_diet(cat_id) if cat_id else []
 
     # Convert to DataFrames for compatibility
     weights_df = pd.DataFrame(weights_list) if weights_list else pd.DataFrame(columns=["dt", "weight_kg"])
     foods_df = pd.DataFrame(foods_list) if foods_list else pd.DataFrame(columns=["id", "name", "unit", "kcal_per_unit", "grams_per_cup"])
     diet_df = pd.DataFrame(diet_list) if diet_list else pd.DataFrame(columns=["food_id", "pct_daily_kcal"])
 
-    age_weeks = current_age_weeks(date.fromisoformat(prof["anchor_date"]), float(prof["anchor_age_weeks"]))
-    stage = (prof.get("life_stage_override") or "") or infer_life_stage(age_weeks)
+    # Calculate age and stage
+    # If birthday is available, calculate age from birthday
+    birthday = selected_cat.get("birthday")
+    anchor_date = date.fromisoformat(selected_cat.get("anchor_date", date.today().isoformat()))
+    anchor_age_weeks = float(selected_cat.get("anchor_age_weeks", 8.0))
+    
+    if birthday:
+        try:
+            birthday_date = date.fromisoformat(birthday)
+            age_weeks = weeks_between(birthday_date, date.today())
+        except:
+            # Fallback to anchor date method
+            age_weeks = current_age_weeks(anchor_date, anchor_age_weeks)
+    else:
+        # Use anchor date method
+        age_weeks = current_age_weeks(anchor_date, anchor_age_weeks)
+    
+    stage = (selected_cat.get("life_stage_override") or "") or infer_life_stage(age_weeks)
 
     latest_w = None
     if not weights_df.empty:
@@ -361,10 +537,22 @@ def home():
     # charts data
     trend = []
     if not weights_df.empty:
+        # Determine age calculation method
+        use_birthday = bool(birthday)
+        birthday_date_obj = None
+        if use_birthday:
+            try:
+                birthday_date_obj = date.fromisoformat(birthday)
+            except:
+                use_birthday = False
+        
         for _, r in weights_df.iterrows():
             dt = date.fromisoformat(r["dt"])
-            age_w = float(prof["anchor_age_weeks"]) + weeks_between(date.fromisoformat(prof["anchor_date"]), dt)
-            stg = prof.get("life_stage_override") or infer_life_stage(age_w)
+            if use_birthday and birthday_date_obj:
+                age_w = weeks_between(birthday_date_obj, dt)
+            else:
+                age_w = anchor_age_weeks + weeks_between(anchor_date, dt)
+            stg = selected_cat.get("life_stage_override") or infer_life_stage(age_w)
             kcal = der_kcal(float(r["weight_kg"]), stg)
             trend.append({
                 "dt": r["dt"],
@@ -374,14 +562,16 @@ def home():
 
     per_meal = pd.DataFrame()
     if daily_kcal and not diet_df.empty and not foods_df.empty:
-        per_meal = kcal_split(daily_kcal, int(prof["meals_per_day"]), diet_list, foods_list)
+        per_meal = kcal_split(daily_kcal, int(selected_cat.get("meals_per_day", 3)), diet_list, foods_list)
 
     # for diet form display
     diet_map = {int(r["food_id"]): float(r["pct_daily_kcal"]) for _, r in diet_df.iterrows()} if not diet_df.empty else {}
 
     return render_template(
         "index.html",
-        prof=prof,
+        cats=all_cats,
+        selected_cat=selected_cat,
+        cat_id=cat_id,
         age_weeks=age_weeks,
         stage=stage,
         latest_w=latest_w,

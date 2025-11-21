@@ -2,81 +2,143 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>Kitten Feeding Planner</title>
+  <title>Cat Feeding Planner</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      font-size: 15px;
+      line-height: 1.6;
+      color: #333;
+    }
     .kmono { font-variant-numeric: tabular-nums; }
-    .table-sm td, .table-sm th { padding: .35rem; }
+    .table-sm td, .table-sm th { padding: .5rem; }
+    .header-section {
+      background: white;
+      border-bottom: 2px solid #e9ecef;
+      padding: 1.5rem 0;
+      margin-bottom: 2rem;
+    }
+    .cat-profile-card {
+      background: white;
+      border-radius: 12px;
+      padding: 1.5rem;
+      margin-bottom: 2rem;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .cat-profile-img {
+      width: 120px;
+      height: 120px;
+      object-fit: cover;
+      border-radius: 50%;
+      border: 3px solid #dee2e6;
+    }
+    .cat-name {
+      font-size: 1.75rem;
+      font-weight: 600;
+      color: #212529;
+      margin-bottom: 0.5rem;
+    }
+    .stat-card {
+      background: #f8f9fa;
+      border-radius: 8px;
+      padding: 1rem;
+      text-align: center;
+    }
+    .stat-label {
+      font-size: 0.875rem;
+      color: #6c757d;
+      margin-bottom: 0.5rem;
+    }
+    .stat-value {
+      font-size: 1.5rem;
+      font-weight: 600;
+      color: #212529;
+    }
+    .form-label {
+      font-weight: 500;
+      color: #495057;
+      margin-bottom: 0.5rem;
+    }
+    .nav-tabs .nav-link {
+      color: #6c757d;
+      font-weight: 500;
+    }
+    .nav-tabs .nav-link.active {
+      color: #0d6efd;
+      font-weight: 600;
+    }
+    h6 {
+      font-weight: 600;
+      color: #212529;
+      margin-bottom: 1rem;
+    }
   </style>
 </head>
 <body class="bg-light">
 <div class="container py-4">
-  <h3 class="mb-3">Kitten Calorie & Feeding Planner</h3>
-
-  <!-- Profile -->
-  <div class="card mb-3">
-    <div class="card-header">Profile</div>
-    <div class="card-body">
-      <form method="post" class="row g-3">
-        <input type="hidden" name="action" value="save_profile">
-        <div class="col-md-3">
-          <label class="form-label">Cat name</label>
-          <input name="name" value="{{ prof.name or '' }}" class="form-control">
-        </div>
-        <div class="col-md-3">
-          <label class="form-label">Anchor date</label>
-          <input type="date" name="anchor_date" value="{{ prof.anchor_date }}" class="form-control" required>
-        </div>
-        <div class="col-md-3">
-          <label class="form-label">Starting age (weeks)</label>
-          <input type="number" step="0.5" name="anchor_age_weeks" value="{{ prof.anchor_age_weeks }}" class="form-control" required>
-        </div>
-        <div class="col-md-3">
-          <label class="form-label">Meals/day</label>
-          <input type="number" name="meals_per_day" min="1" max="12" value="{{ prof.meals_per_day }}" class="form-control" required>
-        </div>
-        <div class="col-md-3">
-          <label class="form-label">Life stage override</label>
-          <select name="life_stage_override" class="form-select">
-            {% set stages = ["", "kitten_0_4m","kitten_4_12m","adult_neutered","adult_intact","adult_obese_prone"] %}
-            {% for s in stages %}
-            <option value="{{ s }}" {% if prof.life_stage_override==s %}selected{% endif %}>{{ s if s else "(auto)" }}</option>
+  <!-- Header Section -->
+  <div class="header-section">
+    <div class="d-flex justify-content-between align-items-center">
+      <h2 class="mb-0" style="font-weight: 600;">Cat Feeding Planner</h2>
+      <div class="d-flex gap-2 align-items-center">
+        <select class="form-select" id="catSelector" style="min-width: 200px;" onchange="window.location.href='?cat_id=' + this.value">
+          {% if cats|length > 0 %}
+            {% for cat in cats %}
+              <option value="{{ cat.id }}" {% if cat.id == cat_id %}selected{% endif %}>{{ cat.name }}</option>
             {% endfor %}
-          </select>
-        </div>
-        <div class="col-12">
-          <button class="btn btn-primary">Save profile</button>
-          <span class="ms-3">Age now: <b class="kmono">{{ "%.1f"|format(age_weeks) }}</b> wk. Stage: <b>{{ stage }}</b></span>
-        </div>
-      </form>
+          {% else %}
+            <option value="">No cats yet</option>
+          {% endif %}
+        </select>
+        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addCatModal">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" style="margin-right: 0.25rem;">
+            <path d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4z"/>
+          </svg>
+          Add New Cat
+        </button>
+      </div>
     </div>
   </div>
 
-  <!-- Quick stats -->
-  <div class="row g-3 mb-3">
-    <div class="col-md-3">
-      <div class="card text-center">
-        <div class="card-body">
-          <div>Latest weight (kg)</div>
-          <div class="h4 kmono">{{ "%.3f"|format(latest_w) if latest_w else "—" }}</div>
-        </div>
+  <!-- Cat Profile Display -->
+  <div class="cat-profile-card">
+    <div class="row align-items-center">
+      <div class="col-auto">
+        {% if selected_cat.profile_pic_url %}
+          <img src="{{ selected_cat.profile_pic_url }}" alt="{{ selected_cat.name }}" class="cat-profile-img">
+        {% else %}
+          <div class="cat-profile-img bg-secondary d-flex align-items-center justify-content-center text-white" style="font-size: 3rem;">🐱</div>
+        {% endif %}
       </div>
-    </div>
-    <div class="col-md-3">
-      <div class="card text-center">
-        <div class="card-body">
-          <div>Daily target kcal</div>
-          <div class="h4 kmono">{{ "%.0f"|format(daily_kcal) if daily_kcal else "—" }}</div>
+      <div class="col">
+        <div class="cat-name">{{ selected_cat.name }}</div>
+        <div class="text-muted mb-3">
+          <strong>Birthday:</strong> {{ selected_cat.birthday if selected_cat.birthday else "Not set" }} &nbsp;|&nbsp;
+          <strong>Current Age:</strong> {{ "%.1f"|format(age_weeks) }} weeks &nbsp;|&nbsp;
+          <strong>Life Stage:</strong> {{ stage.replace("_", " ").title() }}
         </div>
-      </div>
-    </div>
-    <div class="col-md-3">
-      <div class="card text-center">
-        <div class="card-body">
-          <div>Meals/day</div>
-          <div class="h4 kmono">{{ prof.meals_per_day }}</div>
+        <div class="row g-3">
+          <div class="col-md-3">
+            <div class="stat-card">
+              <div class="stat-label">Latest Weight</div>
+              <div class="stat-value kmono">{{ "%.2f"|format(latest_w) if latest_w else "—" }} kg</div>
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="stat-card">
+              <div class="stat-label">Daily Target Calories</div>
+              <div class="stat-value kmono">{{ "%.0f"|format(daily_kcal) if daily_kcal else "—" }} kcal</div>
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="stat-card">
+              <div class="stat-label">Meals Per Day</div>
+              <div class="stat-value kmono">{{ selected_cat.meals_per_day }}</div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -85,33 +147,42 @@
   <!-- Tabs -->
   <ul class="nav nav-tabs" id="tabs" role="tablist">
     <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#dash" type="button">Dashboard</button></li>
-    <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#log" type="button">Log data</button></li>
+    <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#log" type="button">Weight Log</button></li>
     <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#foods" type="button">Foods</button></li>
-    <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#diet" type="button">Diet planner</button></li>
-    <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#calc" type="button">Calculations & sources</button></li>
-    <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#data" type="button">Data</button></li>
+    <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#diet" type="button">Diet Plan</button></li>
+    <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#calc" type="button">Calculations</button></li>
   </ul>
 
-  <div class="tab-content border border-top-0 p-3 bg-white">
+  <div class="tab-content border border-top-0 p-4 bg-white">
     <!-- Dashboard -->
     <div class="tab-pane fade show active" id="dash">
-      <h6>Per-meal plan</h6>
+      <h6>Per-Meal Feeding Plan</h6>
       {% if per_meal|length == 0 %}
-      <div class="text-muted">Add weights and a 100% diet to see amounts.</div>
+      <div class="text-muted mb-4">Please add weight measurements and create a 100% diet plan to see feeding amounts.</div>
       {% else %}
       <div class="table-responsive">
         <table class="table table-sm">
-          <thead><tr><th>Food</th><th>% kcal/day</th><th>kcal/day</th><th>kcal/meal</th><th>Qty/meal</th><th>Unit</th><th>Grams/meal</th></tr></thead>
+          <thead>
+            <tr>
+              <th>Food</th>
+              <th>% Daily Calories</th>
+              <th>Calories per Day</th>
+              <th>Calories per Meal</th>
+              <th>Quantity per Meal</th>
+              <th>Unit</th>
+              <th>Grams per Meal</th>
+            </tr>
+          </thead>
           <tbody>
           {% for r in per_meal %}
             <tr>
-              <td>{{ r.Food }}</td>
-              <td class="kmono">{{ "%.1f"|format(r.pct) }}</td>
-              <td class="kmono">{{ "%.1f"|format(r.kcal_day) }}</td>
-              <td class="kmono">{{ "%.1f"|format(r.kcal_meal) }}</td>
+              <td><strong>{{ r.Food }}</strong></td>
+              <td class="kmono">{{ "%.1f"|format(r.pct) }}%</td>
+              <td class="kmono">{{ "%.1f"|format(r.kcal_day) }} kcal</td>
+              <td class="kmono">{{ "%.1f"|format(r.kcal_meal) }} kcal</td>
               <td class="kmono">{{ "%.3f"|format(r.qty_per_meal) }}</td>
               <td>{{ r.unit }}</td>
-              <td class="kmono">{{ r.grams_per_meal if r.grams_per_meal is not none else "—" }}</td>
+              <td class="kmono">{{ r.grams_per_meal if r.grams_per_meal is not none else "—" }} g</td>
             </tr>
           {% endfor %}
           </tbody>
@@ -119,22 +190,24 @@
       </div>
       {% endif %}
 
-      <div class="row g-3">
+      <div class="row g-4 mt-2">
         <div class="col-md-6">
-          <h6>Weight over time</h6>
+          <h6>Weight Over Time</h6>
           <canvas id="wChart"></canvas>
         </div>
         <div class="col-md-6">
-          <h6>Target kcal/day over time</h6>
+          <h6>Target Calories per Day Over Time</h6>
           <canvas id="kChart"></canvas>
         </div>
       </div>
     </div>
 
-    <!-- Log data -->
+    <!-- Weight Log -->
     <div class="tab-pane fade" id="log">
-      <form method="post" class="row g-3">
+      <h6>Add Weight Measurement</h6>
+      <form method="post" enctype="multipart/form-data" class="row g-3 mb-4">
         <input type="hidden" name="action" value="add_weight">
+        <input type="hidden" name="cat_id" value="{{ cat_id }}">
         <div class="col-md-3">
           <label class="form-label">Date</label>
           <input type="date" name="weight_dt" value="{{ (weights_list[-1].dt if weights_list|length>0 else '') or (('%Y-%m-%d')|strftime) }}" class="form-control" required>
@@ -144,16 +217,28 @@
           <input type="number" step="0.01" min="0.1" name="weight_kg" class="form-control" required>
         </div>
         <div class="col-md-3 align-self-end">
-          <button class="btn btn-primary">Save weight</button>
+          <button class="btn btn-primary">Save Weight</button>
         </div>
       </form>
-      <div class="table-responsive mt-3">
+      <h6>Weight History</h6>
+      <div class="table-responsive">
         <table class="table table-sm">
-          <thead><tr><th>Date</th><th>Weight (kg)</th></tr></thead>
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Weight (kg)</th>
+            </tr>
+          </thead>
           <tbody>
           {% for r in weights_list|reverse %}
-            <tr><td class="kmono">{{ r.dt }}</td><td class="kmono">{{ "%.3f"|format(r.weight_kg) }}</td></tr>
+            <tr>
+              <td class="kmono">{{ r.dt }}</td>
+              <td class="kmono">{{ "%.2f"|format(r.weight_kg) }} kg</td>
+            </tr>
           {% endfor %}
+          {% if weights_list|length == 0 %}
+            <tr><td colspan="2" class="text-muted">No weight measurements yet</td></tr>
+          {% endif %}
           </tbody>
         </table>
       </div>
@@ -161,119 +246,201 @@
 
     <!-- Foods -->
     <div class="tab-pane fade" id="foods">
-      <form method="post" class="row g-3">
+      <h6>Add New Food</h6>
+      <form method="post" class="row g-3 mb-4">
         <input type="hidden" name="action" value="add_food">
-        <div class="col-md-3"><label class="form-label">Name</label><input name="food_name" class="form-control" required></div>
+        <input type="hidden" name="cat_id" value="{{ cat_id }}">
         <div class="col-md-3">
-          <label class="form-label">Unit</label>
+          <label class="form-label">Food Name</label>
+          <input name="food_name" class="form-control" required placeholder="e.g., Dry Cat Food">
+        </div>
+        <div class="col-md-3">
+          <label class="form-label">Unit Type</label>
           <select name="food_unit" class="form-select">
-            <option value="kcal_per_g">kcal_per_g</option>
-            <option value="kcal_per_cup">kcal_per_cup</option>
+            <option value="kcal_per_g">Calories per Gram</option>
+            <option value="kcal_per_cup">Calories per Cup</option>
           </select>
         </div>
-        <div class="col-md-3"><label class="form-label">Calories per unit</label><input type="number" step="0.1" name="kcal_per_unit" class="form-control" required></div>
-        <div class="col-md-3"><label class="form-label">Grams per cup (if per cup)</label><input type="number" step="1" name="grams_per_cup" class="form-control"></div>
-        <div class="col-12"><button class="btn btn-primary">Add food</button></div>
+        <div class="col-md-3">
+          <label class="form-label">Calories per Unit</label>
+          <input type="number" step="0.1" name="kcal_per_unit" class="form-control" required placeholder="e.g., 3.5">
+        </div>
+        <div class="col-md-3">
+          <label class="form-label">Grams per Cup (if using cups)</label>
+          <input type="number" step="1" name="grams_per_cup" class="form-control" placeholder="e.g., 120">
+        </div>
+        <div class="col-12">
+          <button class="btn btn-primary">Add Food</button>
+        </div>
       </form>
 
       <hr>
+      <h6>Food List</h6>
       <div class="table-responsive">
         <table class="table table-sm">
-          <thead><tr><th>ID</th><th>Name</th><th>Unit</th><th>kcal/unit</th><th>g/cup</th><th></th></tr></thead>
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Food Name</th>
+              <th>Unit Type</th>
+              <th>Calories per Unit</th>
+              <th>Grams per Cup</th>
+              <th></th>
+            </tr>
+          </thead>
           <tbody>
           {% for f in foods %}
             <tr>
               <td class="kmono">{{ f.id }}</td>
-              <td>{{ f.name }}</td>
-              <td>{{ f.unit }}</td>
-              <td class="kmono">{{ "%.1f"|format(f.kcal_per_unit) }}</td>
-              <td class="kmono">{{ f.grams_per_cup if f.grams_per_cup else "—" }}</td>
+              <td><strong>{{ f.name }}</strong></td>
+              <td>{{ f.unit.replace("_", " ").title() }}</td>
+              <td class="kmono">{{ "%.1f"|format(f.kcal_per_unit) }} kcal</td>
+              <td class="kmono">{{ f.grams_per_cup if f.grams_per_cup else "—" }} g</td>
               <td>
                 <form method="post" class="d-inline">
                   <input type="hidden" name="action" value="delete_food">
+                  <input type="hidden" name="cat_id" value="{{ cat_id }}">
                   <input type="hidden" name="del_food_id" value="{{ f.id }}">
                   <button class="btn btn-sm btn-outline-danger">Delete</button>
                 </form>
               </td>
             </tr>
           {% endfor %}
+          {% if foods|length == 0 %}
+            <tr><td colspan="6" class="text-muted">No foods added yet</td></tr>
+          {% endif %}
           </tbody>
         </table>
       </div>
     </div>
 
-    <!-- Diet -->
+    <!-- Diet Plan -->
     <div class="tab-pane fade" id="diet">
+      <h6>Create Diet Plan</h6>
+      <p class="text-muted mb-3">Set the percentage of daily calories for each food. Total must equal 100%.</p>
       <form method="post">
         <input type="hidden" name="action" value="save_diet">
+        <input type="hidden" name="cat_id" value="{{ cat_id }}">
         <div class="table-responsive">
           <table class="table table-sm">
-            <thead><tr><th>Food</th><th>% kcal/day</th></tr></thead>
+            <thead>
+              <tr>
+                <th>Food</th>
+                <th style="max-width:200px;">Percentage of Daily Calories (%)</th>
+              </tr>
+            </thead>
             <tbody>
             {% for f in foods %}
               <tr>
-                <td>{{ f.name }}</td>
-                <td style="max-width:160px;">
+                <td><strong>{{ f.name }}</strong></td>
+                <td>
                   <input class="form-control form-control-sm" type="number" step="1" min="0" max="100"
-                         name="diet_pct_{{ f.id }}" value="{{ diet_map.get(f.id, 0.0) }}">
+                         name="diet_pct_{{ f.id }}" value="{{ diet_map.get(f.id, 0.0) }}" required>
                 </td>
               </tr>
             {% endfor %}
+            {% if foods|length == 0 %}
+              <tr><td colspan="2" class="text-muted">Please add foods first before creating a diet plan</td></tr>
+            {% endif %}
             </tbody>
           </table>
         </div>
-        <p>Total: <b class="kmono">{{ "%.1f"|format(total_pct) }}</b>% (must be 100%)</p>
-        <button class="btn btn-primary">Save diet</button>
+        {% if foods|length > 0 %}
+        <div class="mt-3">
+          <p>Total: <strong class="kmono" style="font-size: 1.1rem;">{{ "%.1f"|format(total_pct) }}%</strong> 
+          {% if round(total_pct, 1) != 100.0 %}
+            <span class="text-danger">(must be exactly 100%)</span>
+          {% else %}
+            <span class="text-success">✓</span>
+          {% endif %}
+          </p>
+          <button class="btn btn-primary">Save Diet Plan</button>
+        </div>
+        {% endif %}
       </form>
     </div>
 
     <!-- Calculations -->
     <div class="tab-pane fade" id="calc">
-      <h6>How calorie targets are calculated</h6>
+      <h6>How Calorie Targets Are Calculated</h6>
+      <div class="mb-4">
+        <p>The calorie requirements are calculated using the following formulas:</p>
+        <ul>
+          <li><strong>RER (Resting Energy Requirement)</strong> = 70 × Body Weight(kg)<sup>0.75</sup></li>
+          <li><strong>DER (Daily Energy Requirement)</strong> = RER × Life Stage Factor</li>
+        </ul>
+      </div>
+      <h6>Life Stage Factors</h6>
       <ul>
-        <li>RER = 70 × BW(kg)<sup>0.75</sup></li>
-        <li>DER = RER × factor</li>
+        <li><strong>Kittens 0–4 months:</strong> 2.5 × RER (rapid growth phase)</li>
+        <li><strong>Kittens 4–12 months:</strong> 2.0 × RER (moderate growth)</li>
+        <li><strong>Adult neutered:</strong> 1.2 × RER (maintenance)</li>
+        <li><strong>Adult intact:</strong> 1.4 × RER (higher metabolism)</li>
+        <li><strong>Adult obese-prone:</strong> 1.0 × RER (weight management)</li>
       </ul>
-      <p>Factors used:</p>
-      <ul>
-        <li>Kittens 0–4 months: 2.5 × RER</li>
-        <li>Kittens 4–12 months: 2.0 × RER</li>
-        <li>Adult neutered: 1.2 × RER</li>
-        <li>Adult intact: 1.4 × RER</li>
-        <li>Adult obese-prone: 1.0 × RER</li>
-      </ul>
-      <p>These are starting points. Adjust by 10–20% based on body condition and your vet’s advice.</p>
-    </div>
-
-    <!-- Data -->
-    <div class="tab-pane fade" id="data">
-      <h6>Raw tables</h6>
-      <div class="row">
-        <div class="col-md-6">
-          <h6>Weights</h6>
-          <table class="table table-sm">
-            <thead><tr><th>Date</th><th>Weight_kg</th></tr></thead>
-            <tbody>
-            {% for r in weights_list %}
-              <tr><td class="kmono">{{ r.dt }}</td><td class="kmono">{{ "%.3f"|format(r.weight_kg) }}</td></tr>
-            {% endfor %}
-            </tbody>
-          </table>
-        </div>
-        <div class="col-md-6">
-          <h6>Foods</h6>
-          <table class="table table-sm">
-            <thead><tr><th>ID</th><th>Name</th><th>Unit</th><th>kcal/unit</th><th>g/cup</th></tr></thead>
-            <tbody>
-            {% for f in foods %}
-              <tr><td class="kmono">{{ f.id }}</td><td>{{ f.name }}</td><td>{{ f.unit }}</td><td class="kmono">{{ "%.1f"|format(f.kcal_per_unit) }}</td><td class="kmono">{{ f.grams_per_cup if f.grams_per_cup else "—" }}</td></tr>
-            {% endfor %}
-            </tbody>
-          </table>
-        </div>
+      <div class="alert alert-info mt-4">
+        <strong>Note:</strong> These are starting points. Adjust by 10–20% based on your cat's body condition and your veterinarian's advice.
       </div>
     </div>
+  </div>
+</div>
 
+<!-- Add Cat Modal -->
+<div class="modal fade" id="addCatModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Add New Cat</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <form method="post" enctype="multipart/form-data">
+        <div class="modal-body">
+          <input type="hidden" name="action" value="create_cat">
+          <div class="mb-3">
+            <label class="form-label">Cat Name</label>
+            <input type="text" name="cat_name" class="form-control" required placeholder="e.g., Fluffy">
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Birthday</label>
+            <input type="date" name="birthday" class="form-control" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Profile Picture</label>
+            <input type="file" name="profile_pic" class="form-control" accept="image/*">
+            <small class="text-muted">Optional: Upload a photo of your cat</small>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Starting Age (weeks)</label>
+            <input type="number" step="0.5" name="anchor_age_weeks" class="form-control" value="8.0" required>
+            <small class="text-muted">Age at the anchor date</small>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Anchor Date</label>
+            <input type="date" name="anchor_date" class="form-control" required>
+            <small class="text-muted">Reference date for age calculation</small>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Meals Per Day</label>
+            <input type="number" name="meals_per_day" min="1" max="12" class="form-control" value="3" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Life Stage Override</label>
+            <select name="life_stage_override" class="form-select">
+              <option value="">Auto (based on age)</option>
+              <option value="kitten_0_4m">Kitten 0-4 months</option>
+              <option value="kitten_4_12m">Kitten 4-12 months</option>
+              <option value="adult_neutered">Adult Neutered</option>
+              <option value="adult_intact">Adult Intact</option>
+              <option value="adult_obese_prone">Adult Obese-Prone</option>
+            </select>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary">Create Cat Profile</button>
+        </div>
+      </form>
+    </div>
   </div>
 </div>
 
@@ -288,13 +455,53 @@ const kdata  = trend.map(r => r.der_kcal);
 if (labels.length > 0) {
   new Chart(document.getElementById('wChart'), {
     type: 'line',
-    data: { labels: labels, datasets: [{ label: 'kg', data: wdata }] },
-    options: { responsive: true, scales: { y: { title: { display: true, text: 'kg' } }, x: { ticks: { maxRotation: 0 } } } }
+    data: { 
+      labels: labels, 
+      datasets: [{ 
+        label: 'Weight (kg)', 
+        data: wdata,
+        borderColor: 'rgb(13, 110, 253)',
+        backgroundColor: 'rgba(13, 110, 253, 0.1)',
+        tension: 0.4
+      }] 
+    },
+    options: { 
+      responsive: true, 
+      scales: { 
+        y: { 
+          title: { display: true, text: 'Weight (kg)' },
+          beginAtZero: false
+        }, 
+        x: { 
+          ticks: { maxRotation: 45, minRotation: 45 } 
+        } 
+      } 
+    }
   });
   new Chart(document.getElementById('kChart'), {
     type: 'line',
-    data: { labels: labels, datasets: [{ label: 'kcal/day', data: kdata }] },
-    options: { responsive: true, scales: { y: { title: { display: true, text: 'kcal/day' } } } }
+    data: { 
+      labels: labels, 
+      datasets: [{ 
+        label: 'Target Calories per Day', 
+        data: kdata,
+        borderColor: 'rgb(25, 135, 84)',
+        backgroundColor: 'rgba(25, 135, 84, 0.1)',
+        tension: 0.4
+      }] 
+    },
+    options: { 
+      responsive: true, 
+      scales: { 
+        y: { 
+          title: { display: true, text: 'Calories per Day' },
+          beginAtZero: false
+        },
+        x: { 
+          ticks: { maxRotation: 45, minRotation: 45 } 
+        } 
+      } 
+    }
   });
 }
 </script>
