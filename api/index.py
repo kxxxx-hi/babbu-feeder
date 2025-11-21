@@ -470,6 +470,8 @@ def upload_image_to_blob(file, filename: str) -> Optional[str]:
 # ---------- Routes ----------
 @app.route("/", methods=["GET", "POST"])
 def home():
+    # Get tab parameter from URL
+    current_tab = request.args.get("tab", "dash")
     if not STORAGE_AVAILABLE:
         return render_template("index.html", 
             error="Vercel Blob Storage not configured. Please set up BLOB_READ_WRITE_TOKEN environment variable.",
@@ -548,26 +550,29 @@ def home():
         wdt = request.form.get("weight_dt") or date.today().isoformat()
         wkg = float(request.form.get("weight_kg"))
         save_weight(cat_id, wdt, wkg)
-        return redirect(url_for("home", cat_id=cat_id))
+        tab = request.form.get("current_tab", "log")
+        return redirect(url_for("home", cat_id=cat_id, tab=tab))
 
     if action == "add_food":
         name = (request.form.get("food_name") or "").strip()
+        tab = request.form.get("current_tab", "foods")
         if not name:
-            return redirect(url_for("home", cat_id=cat_id) if cat_id else url_for("home"))
+            return redirect(url_for("home", cat_id=cat_id, tab=tab) if cat_id else url_for("home", tab=tab))
         kcal_per_kg = float(request.form.get("kcal_per_kg"))
         if kcal_per_kg <= 0:
-            return redirect(url_for("home", cat_id=cat_id) if cat_id else url_for("home"))
+            return redirect(url_for("home", cat_id=cat_id, tab=tab) if cat_id else url_for("home", tab=tab))
         food_data = {
             "name": name,
             "kcal_per_kg": round(kcal_per_kg, 1)
         }
         save_food(food_data)
-        return redirect(url_for("home", cat_id=cat_id) if cat_id else url_for("home"))
+        return redirect(url_for("home", cat_id=cat_id, tab=tab) if cat_id else url_for("home", tab=tab))
 
     if action == "delete_food":
         fid = int(request.form.get("del_food_id"))
         delete_food(fid)
-        return redirect(url_for("home", cat_id=cat_id) if cat_id else url_for("home"))
+        tab = request.form.get("current_tab", "foods")
+        return redirect(url_for("home", cat_id=cat_id, tab=tab) if cat_id else url_for("home", tab=tab))
 
     if action == "save_diet" and cat_id:
         foods = get_foods()
@@ -584,7 +589,8 @@ def home():
                 })
         if round(total, 1) == 100.0:
             save_diet(cat_id, diet_list)
-        return redirect(url_for("home", cat_id=cat_id))
+        tab = request.form.get("current_tab", "diet")
+        return redirect(url_for("home", cat_id=cat_id, tab=tab))
 
     # Get selected cat data or use default
     selected_cat = None
@@ -675,7 +681,8 @@ def home():
         foods=foods_list,
         diet_map=diet_map,
         total_pct=round(sum(diet_map.values()), 1) if diet_map else 0.0,
-        trend=trend
+        trend=trend,
+        current_tab=current_tab
     )
 
 # Health check

@@ -256,6 +256,7 @@
       <form method="post" enctype="multipart/form-data" class="row g-3 mb-4">
         <input type="hidden" name="action" value="add_weight">
         <input type="hidden" name="cat_id" value="{{ cat_id }}">
+        <input type="hidden" name="current_tab" value="log">
         <div class="col-md-3">
           <label class="form-label">Date</label>
           <input type="date" name="weight_dt" value="{{ (weights_list[-1].dt if weights_list|length>0 else '') or (('%Y-%m-%d')|strftime) }}" class="form-control" required>
@@ -298,6 +299,7 @@
       <form method="post" class="row g-3 mb-4">
         <input type="hidden" name="action" value="add_food">
         <input type="hidden" name="cat_id" value="{{ cat_id }}">
+        <input type="hidden" name="current_tab" value="foods">
         <div class="col-md-4">
           <label class="form-label">Food Name</label>
           <input name="food_name" class="form-control" required placeholder="e.g., Dry Cat Food">
@@ -333,6 +335,7 @@
                 <form method="post" class="d-inline">
                   <input type="hidden" name="action" value="delete_food">
                   <input type="hidden" name="cat_id" value="{{ cat_id }}">
+                  <input type="hidden" name="current_tab" value="foods">
                   <input type="hidden" name="del_food_id" value="{{ f.id }}">
                   <button class="btn btn-sm btn-outline-danger">Delete</button>
                 </form>
@@ -470,6 +473,57 @@
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script>
+// Activate correct tab on page load
+(function() {
+  const tabMap = {
+    'dash': '#dash',
+    'log': '#log',
+    'foods': '#foods',
+    'diet': '#diet',
+    'calc': '#calc'
+  };
+  const currentTab = '{{ current_tab|default("dash") }}';
+  const targetTab = tabMap[currentTab] || '#dash';
+  
+  // Remove active class from all tabs
+  document.querySelectorAll('.nav-link').forEach(link => {
+    link.classList.remove('active');
+    const tabPane = document.querySelector(link.getAttribute('data-bs-target'));
+    if (tabPane) {
+      tabPane.classList.remove('show', 'active');
+    }
+  });
+  
+  // Activate the correct tab
+  const targetLink = document.querySelector(`[data-bs-target="${targetTab}"]`);
+  const targetPane = document.querySelector(targetTab);
+  if (targetLink && targetPane) {
+    targetLink.classList.add('active');
+    targetPane.classList.add('show', 'active');
+  }
+  
+  // Update URL when tabs are clicked
+  document.querySelectorAll('.nav-link[data-bs-toggle="tab"]').forEach(link => {
+    link.addEventListener('shown.bs.tab', function(e) {
+      const tabId = e.target.getAttribute('data-bs-target').substring(1);
+      const tabNameMap = {
+        'dash': 'dash',
+        'log': 'log',
+        'foods': 'foods',
+        'diet': 'diet',
+        'calc': 'calc'
+      };
+      const tabName = tabNameMap[tabId] || 'dash';
+      const url = new URL(window.location);
+      url.searchParams.set('tab', tabName);
+      if (url.searchParams.has('cat_id')) {
+        url.searchParams.set('cat_id', url.searchParams.get('cat_id'));
+      }
+      window.history.pushState({}, '', url);
+    });
+  });
+})();
+
 // Charts
 const trend = JSON.parse('{{ trend|tojson|safe }}');
 const labels = trend.map(r => r.dt);
