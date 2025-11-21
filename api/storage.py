@@ -51,14 +51,11 @@ class VercelBlobStorage:
             if get_response.status_code == 404:
                 print(f"Blob {key} not found directly, trying prefix search...")
                 # List blobs with the prefix
-                list_url = f"{self.base_url}/list"
-                params = {"prefix": key}
-                list_response = requests.get(list_url, headers=headers, params=params, timeout=10)
-                
-                if list_response.status_code == 200:
-                    result = list_response.json()
-                    blobs = result.get("blobs", [])
+                blobs = self.list_blobs(prefix=key)
+                if blobs:
                     print(f"Found {len(blobs)} blobs with prefix '{key}'")
+                else:
+                    print(f"No blobs returned for prefix '{key}'")
                     
                     # Find exact match or closest match (blob name starting with key)
                     matching_blob = None
@@ -102,8 +99,6 @@ class VercelBlobStorage:
                         print(f"No blob found with prefix '{key}' (searched {len(blobs)} blobs)")
                         if blobs:
                             print(f"Available blobs: {[b.get('pathname') for b in blobs[:5]]}")
-                else:
-                    print(f"List API returned HTTP {list_response.status_code}: {list_response.text[:200]}")
             
             # Blob doesn't exist
             return {}
@@ -171,23 +166,30 @@ class VercelBlobStorage:
             print(f"Error deleting blob: {e}")
             return False
     
-    def list_blobs(self, prefix: str = "") -> List[Dict[str, Any]]:
-        """List all blobs with optional prefix"""
+    def list_blobs(self, prefix: str = "", limit: int = 1000) -> List[Dict[str, Any]]:
+        """List blobs using Vercel's POST /list endpoint"""
         try:
             if not self.token:
                 return []
             
             headers = self._get_headers()
             list_url = f"{self.base_url}/list"
-            params = {"prefix": prefix} if prefix else {}
-            response = requests.get(list_url, headers=headers, params=params, timeout=10)
+            payload = {"prefix": prefix, "limit": limit}
+            response = requests.post(list_url, headers=headers, json=payload, timeout=10)
             
             if response.status_code == 200:
                 result = response.json()
-                return result.get("blobs", [])
+                blobs = result.get("blobs", [])
+                if prefix:
+                    print(f"list_blobs('{prefix}') -> {len(blobs)} blobs")
+                return blobs
+            else:
+                print(f"list_blobs error HTTP {response.status_code}: {response.text[:200]}")
             return []
         except Exception as e:
             print(f"Error listing blobs: {e}")
+            import traceback
+            traceback.print_exc()
             return []
     
     def purge_all_data(self):
