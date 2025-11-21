@@ -57,48 +57,59 @@ class VercelBlobStorage:
                 else:
                     print(f"No blobs returned for prefix '{key}'")
                     
-                    # Find exact match or closest match (blob name starting with key)
-                    matching_blob = None
-                    for blob in blobs:
-                        pathname = blob.get("pathname", "")
-                        # Check for exact match first
-                        if pathname == key:
-                            matching_blob = blob
-                            print(f"Found exact match: {pathname}")
-                            break
-                        # Check if pathname starts with key followed by "-" (handles Vercel suffixes)
-                        # e.g., "data/cat_1" matches "data/cat_1-76udXzISNAw3ujt1sYxLI8g46URz0M"
-                        elif pathname.startswith(key + "-"):
-                            matching_blob = blob
-                            print(f"Found blob with suffix: {pathname}")
-                            break
-                        # Also check for directory-style (key + "/")
-                        elif pathname.startswith(key + "/"):
-                            matching_blob = blob
-                            print(f"Found blob in subdirectory: {pathname}")
-                            break
+                # Find exact match or closest match (blob name starting with key)
+                matching_blob = None
+                for blob in blobs:
+                    pathname = blob.get("pathname", "")
+                    # Debug
+                    print(f"  -> candidate blob pathname: {pathname}")
+                    # Check for exact match first
+                    if pathname == key:
+                        matching_blob = blob
+                        print(f"Found exact match: {pathname}")
+                        break
+                    # Check if pathname starts with key followed by "-" (handles Vercel suffixes)
+                    # e.g., "data/cat_1" matches "data/cat_1-76udXzISNAw3ujt1sYxLI8g46URz0M"
+                    elif pathname.startswith(key + "-"):
+                        matching_blob = blob
+                        print(f"Found blob with suffix: {pathname}")
+                        break
+                    # Also check for directory-style (key + "/")
+                    elif pathname.startswith(key + "/"):
+                        matching_blob = blob
+                        print(f"Found blob in subdirectory: {pathname}")
+                        break
                     
-                    if matching_blob:
-                        # Get the URL and fetch content
-                        blob_url = matching_blob.get("url")
-                        if blob_url:
-                            print(f"Fetching content from: {blob_url}")
+                if matching_blob:
+                    print(f"Matched blob metadata: {matching_blob}")
+                    # Get the URL and fetch content
+                    blob_url = matching_blob.get("url")
+                    # Some responses include downloadUrl instead of url
+                    if not blob_url:
+                        blob_url = matching_blob.get("downloadUrl")
+                    if blob_url:
+                        try:
                             content_response = requests.get(blob_url, timeout=10)
                             if content_response.status_code == 200:
                                 try:
                                     data = content_response.json()
-                                    print(f"Successfully read JSON from blob {matching_blob.get('pathname')}")
+                                    print(f"Successfully read JSON from blob {matching_blob.get('pathname')} via public URL")
                                     return data
                                 except json.JSONDecodeError as e:
-                                    print(f"Error parsing JSON from blob: {e}")
+                                    print(f"Error parsing JSON from blob {blob_url}: {e}")
                                     print(f"Response text (first 500 chars): {content_response.text[:500]}")
                                     return {}
-                        else:
-                            print(f"No URL found in blob metadata: {matching_blob}")
+                            else:
+                                print(f"Failed to fetch blob content from {blob_url}: HTTP {content_response.status_code}")
+                                print(f"Response preview: {content_response.text[:200]}")
+                        except Exception as fetch_err:
+                            print(f"Error fetching blob content from {blob_url}: {fetch_err}")
                     else:
-                        print(f"No blob found with prefix '{key}' (searched {len(blobs)} blobs)")
-                        if blobs:
-                            print(f"Available blobs: {[b.get('pathname') for b in blobs[:5]]}")
+                        print(f"No URL found in blob metadata: {matching_blob}")
+                else:
+                    print(f"No blob found with prefix '{key}' (searched {len(blobs)} blobs)")
+                    if blobs:
+                        print(f"Available blobs: {[b.get('pathname') for b in blobs[:5]]}")
             
             # Blob doesn't exist
             return {}
@@ -166,16 +177,15 @@ class VercelBlobStorage:
             print(f"Error deleting blob: {e}")
             return False
     
-    def list_blobs(self, prefix: str = "", limit: int = 1000) -> List[Dict[str, Any]]:
-        """List blobs using Vercel's POST /list endpoint"""
+    def list_blobs(self, prefix: str = "", limit: int = 100) -> List[Dict[str, Any]]:
+        """List blobs by sending GET requests with prefix parameters"""
         try:
             if not self.token:
                 return []
             
             headers = self._get_headers()
-            list_url = f"{self.base_url}/list"
-            payload = {"prefix": prefix, "limit": limit}
-            response = requests.post(list_url, headers=headers, json=payload, timeout=10)
+            params = {"prefix": prefix, "limit": limit}
+            response = requests.get(self.base_url, headers=headers, params=params, timeout=10)
             
             if response.status_code == 200:
                 result = response.json()
