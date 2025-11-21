@@ -381,7 +381,7 @@
         {% if foods|length > 0 %}
         <div class="mt-3">
           <p>Total: <strong class="kmono" style="font-size: 1.1rem;">{{ "%.1f"|format(total_pct) }}%</strong> 
-          {% if round(total_pct, 1) != 100.0 %}
+          {% if total_pct != 100.0 %}
             <span class="text-danger">(must be exactly 100%)</span>
           {% else %}
             <span class="text-success">✓</span>

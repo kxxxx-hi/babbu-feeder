@@ -674,7 +674,7 @@ def home():
         per_meal=per_meal.to_dict(orient="records"),
         foods=foods_list,
         diet_map=diet_map,
-        total_pct=sum(diet_map.values()) if diet_map else 0.0,
+        total_pct=round(sum(diet_map.values()), 1) if diet_map else 0.0,
         trend=trend
     )
 
