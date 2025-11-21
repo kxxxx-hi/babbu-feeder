@@ -99,17 +99,18 @@ def kcal_split(total_kcal: float, meals_per_day: int, diet_list: List[dict], foo
     return pd.DataFrame(out)
 
 # ---------- Vercel Blob Data helpers - Multiple Cats Support ----------
-# Storage structure:
-# - cats.json: {cats: [{id, name, birthday, profile_pic_url, created_at}]}
-# - cat_{id}.json: {id, name, birthday, profile_pic_url, meals_per_day, life_stage_override, weights: [], diet: [], meals: []}
-# - foods.json: {foods: [{id, name, unit, kcal_per_unit, grams_per_cup}]}
+# Storage structure (organized in data/ directory):
+# - data/cats.json: {cats: [{id, name, birthday, profile_pic_url, created_at}]}
+# - data/cat_{id}.json: {id, name, birthday, profile_pic_url, meals_per_day, life_stage_override, weights: [], diet: [], meals: []}
+# - data/foods.json: {foods: [{id, name, unit, kcal_per_unit, grams_per_cup}]}
+# - cat_images/: profile pictures
 
 def get_all_cats():
     """Get list of all cats"""
     if not STORAGE_AVAILABLE:
         return []
     try:
-        data = storage_manager.read_json("cats")
+        data = storage_manager.read_json("data/cats")
         if not data:
             return []
         cats = data.get("cats", [])
@@ -124,7 +125,7 @@ def get_cat(cat_id: int):
     if not STORAGE_AVAILABLE or not cat_id:
         return None
     try:
-        data = storage_manager.read_json(f"cat_{cat_id}")
+        data = storage_manager.read_json(f"data/cat_{cat_id}")
         if not data:
             return None
         return data
@@ -140,7 +141,7 @@ def save_cat(cat_data: dict):
         return None
     try:
         # Get all cats
-        all_cats_data = storage_manager.read_json("cats")
+        all_cats_data = storage_manager.read_json("data/cats")
         if not all_cats_data:
             all_cats_data = {"cats": []}
         cats = all_cats_data.get("cats", [])
@@ -180,7 +181,7 @@ def save_cat(cat_data: dict):
         
         # Save cats list
         all_cats_data["cats"] = cats
-        storage_manager.write_json(all_cats_data, "cats")
+        storage_manager.write_json(all_cats_data, "data/cats")
         
         # Save full cat data - preserve existing weights, diet, and meals if updating
         full_data = {
@@ -194,7 +195,7 @@ def save_cat(cat_data: dict):
             "diet": existing_data.get("diet", []) if existing_data else [],
             "meals": existing_data.get("meals", []) if existing_data else []
         }
-        storage_manager.write_json(full_data, f"cat_{cat_id}")
+        storage_manager.write_json(full_data, f"data/cat_{cat_id}")
         
         return cat_id
     except Exception as e:
@@ -240,7 +241,7 @@ def save_weight(cat_id: int, weight_dt: str, weight_kg: float):
         # Sort by date
         weights = sorted(weights, key=lambda x: x.get("dt", ""))
         data["weights"] = weights
-        storage_manager.write_json(data, f"cat_{cat_id}")
+        storage_manager.write_json(data, f"data/cat_{cat_id}")
     except Exception as e:
         print(f"Error saving weight: {e}")
         import traceback
@@ -251,7 +252,9 @@ def get_foods():
     if not STORAGE_AVAILABLE:
         return []
     try:
-        data = storage_manager.read_json("foods")
+        data = storage_manager.read_json("data/foods")
+        if not data:
+            return []
         foods = data.get("foods", [])
         return sorted(foods, key=lambda x: x.get("name", ""))
     except Exception as e:
@@ -263,7 +266,9 @@ def save_food(food_data: dict):
     if not STORAGE_AVAILABLE:
         return
     try:
-        data = storage_manager.read_json("foods")
+        data = storage_manager.read_json("data/foods")
+        if not data:
+            data = {"foods": []}
         foods = data.get("foods", [])
         
         # Generate ID if not present
@@ -273,7 +278,7 @@ def save_food(food_data: dict):
         
         foods.append(food_data)
         data["foods"] = foods
-        storage_manager.write_json(data, "foods")
+        storage_manager.write_json(data, "data/foods")
     except Exception as e:
         print(f"Error saving food: {e}")
         import traceback
@@ -284,11 +289,13 @@ def delete_food(food_id: int):
     if not STORAGE_AVAILABLE:
         return
     try:
-        data = storage_manager.read_json("foods")
+        data = storage_manager.read_json("data/foods")
+        if not data:
+            return
         foods = data.get("foods", [])
         foods = [f for f in foods if f.get("id") != food_id]
         data["foods"] = foods
-        storage_manager.write_json(data, "foods")
+        storage_manager.write_json(data, "data/foods")
     except Exception as e:
         print(f"Error deleting food: {e}")
         import traceback
@@ -317,7 +324,7 @@ def save_diet(cat_id: int, diet_list: List[dict]):
             print(f"Cat {cat_id} not found, cannot save diet")
             return
         data["diet"] = diet_list
-        storage_manager.write_json(data, f"cat_{cat_id}")
+        storage_manager.write_json(data, f"data/cat_{cat_id}")
     except Exception as e:
         print(f"Error saving diet: {e}")
         import traceback
@@ -343,7 +350,7 @@ def add_meal(cat_id: int, meal_date: str, meal_time: str, food_id: int, quantity
         # Sort by date and time
         meals = sorted(meals, key=lambda x: (x.get("date", ""), x.get("time", "")))
         data["meals"] = meals
-        storage_manager.write_json(data, f"cat_{cat_id}")
+        storage_manager.write_json(data, f"data/cat_{cat_id}")
     except Exception as e:
         print(f"Error adding meal: {e}")
         import traceback

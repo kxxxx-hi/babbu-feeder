@@ -176,11 +176,11 @@ class VercelBlobStorage:
             return []
     
     def purge_all_data(self):
-        """Delete all application data blobs (cats, cat data, foods, but keep images)"""
+        """Delete all application data blobs (old root-level and new data/ directory, but keep images)"""
         try:
             if not self.token:
                 print("Warning: BLOB_READ_WRITE_TOKEN not set, cannot purge data")
-                return
+                return 0
             
             # List all blobs
             all_blobs = self.list_blobs()
@@ -189,10 +189,25 @@ class VercelBlobStorage:
             deleted_count = 0
             for blob in all_blobs:
                 pathname = blob.get("pathname", "")
-                # Delete data files but keep cat_images
-                if pathname and not pathname.startswith("cat_images/"):
+                if not pathname:
+                    continue
+                
+                # Keep cat_images directory
+                if pathname.startswith("cat_images/"):
+                    continue
+                
+                # Delete old root-level data files (cats, cat_*, foods)
+                # and new data/ directory files
+                if (pathname.startswith("data/") or 
+                    pathname == "cats" or 
+                    pathname.startswith("cat_") or 
+                    pathname == "foods" or
+                    pathname.startswith("foods-") or
+                    pathname.startswith("cats-") or
+                    (pathname.startswith("cat_") and "-" in pathname)):
                     if self.delete_blob(pathname):
                         deleted_count += 1
+                        print(f"Deleted: {pathname}")
             
             print(f"Purged {deleted_count} data blobs")
             return deleted_count
