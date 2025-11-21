@@ -47,7 +47,7 @@ class VercelBlobStorage:
                     return {}
             
             # If direct GET failed, try listing blobs with prefix to find the actual blob name
-            # Vercel adds suffixes like "cat_1-WKPOdFhzsxYCyekIoznwu0u5B9u7Kj"
+            # Vercel adds suffixes like "data/cat_1-76udXzISNAw3ujt1sYxLI8g46URz0M"
             if get_response.status_code == 404:
                 print(f"Blob {key} not found directly, trying prefix search...")
                 # List blobs with the prefix
@@ -58,6 +58,7 @@ class VercelBlobStorage:
                 if list_response.status_code == 200:
                     result = list_response.json()
                     blobs = result.get("blobs", [])
+                    print(f"Found {len(blobs)} blobs with prefix '{key}'")
                     
                     # Find exact match or closest match (blob name starting with key)
                     matching_blob = None
@@ -66,17 +67,25 @@ class VercelBlobStorage:
                         # Check for exact match first
                         if pathname == key:
                             matching_blob = blob
+                            print(f"Found exact match: {pathname}")
                             break
-                        # Check if pathname starts with key (handles suffixes)
-                        elif pathname.startswith(key + "-") or pathname.startswith(key + "/"):
+                        # Check if pathname starts with key followed by "-" (handles Vercel suffixes)
+                        # e.g., "data/cat_1" matches "data/cat_1-76udXzISNAw3ujt1sYxLI8g46URz0M"
+                        elif pathname.startswith(key + "-"):
                             matching_blob = blob
+                            print(f"Found blob with suffix: {pathname}")
+                            break
+                        # Also check for directory-style (key + "/")
+                        elif pathname.startswith(key + "/"):
+                            matching_blob = blob
+                            print(f"Found blob in subdirectory: {pathname}")
                             break
                     
                     if matching_blob:
                         # Get the URL and fetch content
                         blob_url = matching_blob.get("url")
                         if blob_url:
-                            print(f"Found blob with suffix: {matching_blob.get('pathname')}, fetching from {blob_url}")
+                            print(f"Fetching content from: {blob_url}")
                             content_response = requests.get(blob_url, timeout=10)
                             if content_response.status_code == 200:
                                 try:
@@ -87,8 +96,14 @@ class VercelBlobStorage:
                                     print(f"Error parsing JSON from blob: {e}")
                                     print(f"Response text (first 500 chars): {content_response.text[:500]}")
                                     return {}
+                        else:
+                            print(f"No URL found in blob metadata: {matching_blob}")
                     else:
-                        print(f"No blob found with prefix '{key}'")
+                        print(f"No blob found with prefix '{key}' (searched {len(blobs)} blobs)")
+                        if blobs:
+                            print(f"Available blobs: {[b.get('pathname') for b in blobs[:5]]}")
+                else:
+                    print(f"List API returned HTTP {list_response.status_code}: {list_response.text[:200]}")
             
             # Blob doesn't exist
             return {}
