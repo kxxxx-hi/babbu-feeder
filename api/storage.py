@@ -1,7 +1,7 @@
 import os
 import json
 import requests
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 
 class VercelBlobStorage:
     """Storage manager using Vercel Blob Storage HTTP API"""
@@ -20,7 +20,7 @@ class VercelBlobStorage:
         }
     
     def read_json(self, key: str) -> Dict[str, Any]:
-        """Read JSON data from Vercel Blob Storage"""
+        """Read JSON data from Vercel Blob Storage - simplified direct approach"""
         try:
             if not self.token:
                 print("Warning: BLOB_READ_WRITE_TOKEN not set, returning empty data")
@@ -28,94 +28,37 @@ class VercelBlobStorage:
             
             headers = self._get_headers()
             
-            # First, try to list blobs with the prefix to find the exact match
-            list_url = f"{self.base_url}/list"
-            params = {"prefix": key}
-            
-            try:
-                list_response = requests.get(list_url, headers=headers, params=params, timeout=10)
-                
-                if list_response.status_code == 200:
-                    result = list_response.json()
-                    blobs = result.get("blobs", [])
-                    print(f"Found {len(blobs)} blobs with prefix '{key}'")
-                    
-                    # Find exact match first
-                    matching_blob = None
-                    for blob in blobs:
-                        pathname = blob.get("pathname", "")
-                        if pathname == key:
-                            matching_blob = blob
-                            print(f"Found exact match: {pathname}")
-                            break
-                    
-                    # If no exact match, try prefix match
-                    if not matching_blob and blobs:
-                        matching_blob = blobs[0]
-                        print(f"Using first blob with prefix: {matching_blob.get('pathname')}")
-                    
-                    if matching_blob:
-                        # Get the URL and fetch content
-                        blob_url = matching_blob.get("url")
-                        if blob_url:
-                            print(f"Fetching content from: {blob_url}")
-                            # Public URLs don't need auth, but try with auth header just in case
-                            content_response = requests.get(blob_url, timeout=10)
-                            if content_response.status_code == 200:
-                                try:
-                                    data = content_response.json()
-                                    print(f"Successfully read JSON from blob")
-                                    return data
-                                except json.JSONDecodeError as e:
-                                    print(f"Error: Response from {blob_url} is not valid JSON: {e}")
-                                    print(f"Response text (first 200 chars): {content_response.text[:200]}")
-                                    return {}
-                            else:
-                                print(f"Error fetching blob content: HTTP {content_response.status_code}")
-                else:
-                    print(f"List API returned HTTP {list_response.status_code}: {list_response.text}")
-            except Exception as e:
-                print(f"Error in list operation: {e}")
-            
-            # If listing didn't work, try direct GET with the key as pathname
-            print(f"Trying direct GET for key: {key}")
+            # Try direct GET first - this is the most reliable method
             get_url = f"{self.base_url}/{key}"
             get_response = requests.get(get_url, headers=headers, timeout=10)
             
             if get_response.status_code == 200:
                 try:
-                    # Check if response is JSON or if it's a redirect to the actual blob URL
+                    # Check if response contains JSON directly or a URL
                     content_type = get_response.headers.get('content-type', '')
-                    if 'application/json' in content_type:
+                    
+                    # Try to parse as JSON
+                    try:
                         data = get_response.json()
-                        print(f"Successfully read JSON via direct GET")
+                        # If it's a blob metadata response with a URL, fetch the actual content
+                        if isinstance(data, dict) and 'url' in data and 'pathname' not in data:
+                            blob_url = data['url']
+                            content_response = requests.get(blob_url, timeout=10)
+                            if content_response.status_code == 200:
+                                return content_response.json()
+                        # Otherwise return the JSON directly
                         return data
-                    else:
-                        # Might be a redirect or the actual content
-                        try:
-                            data = get_response.json()
-                            return data
-                        except:
-                            # If not JSON, might be the blob URL in the response
-                            result = get_response.json() if get_response.text else {}
-                            if 'url' in result:
-                                # Follow the URL
-                                blob_url = result['url']
-                                content_response = requests.get(blob_url, timeout=10)
-                                if content_response.status_code == 200:
-                                    return content_response.json()
-                            return {}
-                except json.JSONDecodeError as e:
-                    print(f"Error: Response from {get_url} is not valid JSON: {e}")
-                    print(f"Response text (first 200 chars): {get_response.text[:200]}")
+                    except json.JSONDecodeError:
+                        # If not JSON, might be text content
+                        return {}
+                except Exception as e:
+                    print(f"Error parsing response: {e}")
                     return {}
             elif get_response.status_code == 404:
                 # Blob doesn't exist yet, return empty dict
-                print(f"Blob {key} not found (404), returning empty data")
                 return {}
             else:
                 print(f"Error reading blob {key}: HTTP {get_response.status_code}")
-                print(f"Response: {get_response.text[:200]}")
                 return {}
                 
         except requests.exceptions.RequestException as e:
@@ -159,6 +102,73 @@ class VercelBlobStorage:
             print(f"Error writing to Vercel Blob: {e}")
             import traceback
             traceback.print_exc()
+    
+    def delete_blob(self, key: str) -> bool:
+        """Delete a blob from Vercel Blob Storage"""
+        try:
+            if not self.token:
+                print("Warning: BLOB_READ_WRITE_TOKEN not set, cannot delete blob")
+                return False
+            
+            headers = self._get_headers()
+            delete_url = f"{self.base_url}/{key}"
+            response = requests.delete(delete_url, headers=headers, timeout=10)
+            
+            if response.status_code in [200, 204]:
+                print(f"Successfully deleted blob: {key}")
+                return True
+            else:
+                print(f"Error deleting blob {key}: HTTP {response.status_code}")
+                return False
+        except Exception as e:
+            print(f"Error deleting blob: {e}")
+            return False
+    
+    def list_blobs(self, prefix: str = "") -> List[Dict[str, Any]]:
+        """List all blobs with optional prefix"""
+        try:
+            if not self.token:
+                return []
+            
+            headers = self._get_headers()
+            list_url = f"{self.base_url}/list"
+            params = {"prefix": prefix} if prefix else {}
+            response = requests.get(list_url, headers=headers, params=params, timeout=10)
+            
+            if response.status_code == 200:
+                result = response.json()
+                return result.get("blobs", [])
+            return []
+        except Exception as e:
+            print(f"Error listing blobs: {e}")
+            return []
+    
+    def purge_all_data(self):
+        """Delete all application data blobs (cats, cat data, foods, but keep images)"""
+        try:
+            if not self.token:
+                print("Warning: BLOB_READ_WRITE_TOKEN not set, cannot purge data")
+                return
+            
+            # List all blobs
+            all_blobs = self.list_blobs()
+            
+            # Delete data blobs (not images)
+            deleted_count = 0
+            for blob in all_blobs:
+                pathname = blob.get("pathname", "")
+                # Delete data files but keep cat_images
+                if pathname and not pathname.startswith("cat_images/"):
+                    if self.delete_blob(pathname):
+                        deleted_count += 1
+            
+            print(f"Purged {deleted_count} data blobs")
+            return deleted_count
+        except Exception as e:
+            print(f"Error purging data: {e}")
+            import traceback
+            traceback.print_exc()
+            return 0
 
 # For backward compatibility, use VercelBlobStorage as CloudStorageManager
 CloudStorageManager = VercelBlobStorage
