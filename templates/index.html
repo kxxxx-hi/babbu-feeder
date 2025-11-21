@@ -131,7 +131,7 @@
     <div class="row align-items-center g-3">
       <div class="col-lg-6 col-12">
         <h2 class="mb-0">Cat Feeding Planner</h2>
-        <p class="text-muted mb-0">Track every cat’s meals, weights, and daily calories in one cozy workspace.</p>
+        <p class="text-muted mb-0">Track every cat’s meals, weights, and daily kcal in one cozy workspace.</p>
       </div>
       <div class="col-lg-6 col-12">
         <div class="header-actions justify-content-lg-end">
@@ -181,7 +181,7 @@
           </div>
           <div class="col-md-3">
             <div class="stat-card">
-              <div class="stat-label">Daily Target Calories</div>
+              <div class="stat-label">Daily Target kcal</div>
               <div class="stat-value kmono">{{ "%.0f"|format(daily_kcal) if daily_kcal else "—" }} kcal</div>
             </div>
           </div>
@@ -217,9 +217,9 @@
           <thead>
             <tr>
               <th>Food</th>
-              <th>% Daily Calories</th>
-              <th>Calories per Day</th>
-              <th>Calories per Meal</th>
+              <th>% Daily kcal</th>
+              <th>kcal per Day</th>
+              <th>kcal per Meal</th>
               <th>Grams per Meal</th>
             </tr>
           </thead>
@@ -244,7 +244,7 @@
           <canvas id="wChart"></canvas>
         </div>
         <div class="col-md-6">
-          <h6>Target Calories per Day Over Time</h6>
+          <h6>Target kcal per Day Over Time</h6>
           <canvas id="kChart"></canvas>
         </div>
       </div>
@@ -303,7 +303,7 @@
           <input name="food_name" class="form-control" required placeholder="e.g., Dry Cat Food">
         </div>
         <div class="col-md-4">
-          <label class="form-label">Calories per 1000 g</label>
+          <label class="form-label">kcal per 1000 g</label>
           <input type="number" step="1" min="1" name="kcal_per_kg" class="form-control" required placeholder="e.g., 3800">
         </div>
         <div class="col-12">
@@ -319,7 +319,7 @@
             <tr>
               <th>ID</th>
               <th>Food Name</th>
-              <th>Calories per 1000 g</th>
+              <th>kcal per 1000 g</th>
               <th></th>
             </tr>
           </thead>
@@ -350,7 +350,7 @@
     <!-- Diet Plan -->
     <div class="tab-pane fade" id="diet">
       <h6>Create Diet Plan</h6>
-      <p class="text-muted mb-3">Set the percentage of daily calories for each food. Total must equal 100%.</p>
+      <p class="text-muted mb-3">Set the percentage of daily kcal for each food. Total must equal 100%.</p>
       <form method="post">
         <input type="hidden" name="action" value="save_diet">
         <input type="hidden" name="cat_id" value="{{ cat_id }}">
@@ -359,7 +359,7 @@
             <thead>
               <tr>
                 <th>Food</th>
-                <th style="max-width:200px;">Percentage of Daily Calories (%)</th>
+                <th style="max-width:200px;">Percentage of Daily kcal (%)</th>
               </tr>
             </thead>
             <tbody>
@@ -507,7 +507,7 @@ if (labels.length > 0) {
     data: { 
       labels: labels, 
       datasets: [{ 
-        label: 'Target Calories per Day', 
+        label: 'Target kcal per Day', 
         data: kdata,
         borderColor: 'rgb(25, 135, 84)',
         backgroundColor: 'rgba(25, 135, 84, 0.1)',
@@ -518,7 +518,7 @@ if (labels.length > 0) {
       responsive: true, 
       scales: { 
         y: { 
-          title: { display: true, text: 'Calories per Day' },
+          title: { display: true, text: 'kcal per Day' },
           beginAtZero: false
         },
         x: { 

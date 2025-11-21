@@ -88,7 +88,7 @@ def format_age_display(age_weeks: float) -> str:
     return " ".join(parts)
 
 def calories_per_kg(food: dict) -> Optional[float]:
-    """Return calories per 1000 g for a food entry, converting legacy fields if needed."""
+    """Return kcal per 1000 g for a food entry, converting legacy fields if needed."""
     if not food:
         return None
     if food.get("kcal_per_kg"):
