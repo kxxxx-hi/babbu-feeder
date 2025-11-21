@@ -476,6 +476,10 @@ def upload_image_to_blob(file, filename: str) -> Optional[str]:
         return None
 
 # ---------- Routes ----------
+@app.route("/favicon.ico")
+def favicon():
+    return "", 204  # No content
+
 @app.route("/", methods=["GET", "POST"])
 def home():
     # Get tab parameter from URL
@@ -556,11 +560,12 @@ def home():
 
     if action == "add_weight":
         if not cat_id:
-            print("Error: add_weight action requires cat_id")
+            print(f"Error: add_weight action requires cat_id. Form data: {dict(request.form)}")
             return redirect(url_for("home"))
         try:
             wdt = request.form.get("weight_dt") or date.today().isoformat()
             wkg_str = request.form.get("weight_kg")
+            print(f"add_weight: cat_id={cat_id}, weight_dt={wdt}, weight_kg={wkg_str}")
             if not wkg_str:
                 print("Error: weight_kg is required")
                 return redirect(url_for("home", cat_id=cat_id, tab="log"))
@@ -568,11 +573,15 @@ def home():
             if wkg <= 0:
                 print("Error: weight must be positive")
                 return redirect(url_for("home", cat_id=cat_id, tab="log"))
+            print(f"Calling save_weight with cat_id={cat_id}, wdt={wdt}, wkg={wkg}")
             save_weight(cat_id, wdt, wkg)
             tab = request.form.get("current_tab", "log")
+            print(f"Redirecting to home with cat_id={cat_id}, tab={tab}")
             return redirect(url_for("home", cat_id=cat_id, tab=tab))
         except ValueError as e:
             print(f"Error parsing weight: {e}")
+            import traceback
+            traceback.print_exc()
             return redirect(url_for("home", cat_id=cat_id, tab="log"))
         except Exception as e:
             print(f"Error in add_weight: {e}")
