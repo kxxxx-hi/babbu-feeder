@@ -267,14 +267,20 @@ def get_weights(cat_id: int):
 
 def save_weight(cat_id: int, weight_dt: str, weight_kg: float):
     """Save weight log for a specific cat"""
-    if not STORAGE_AVAILABLE or not cat_id:
+    if not STORAGE_AVAILABLE:
+        print("Error: Storage not available")
+        return
+    if not cat_id:
+        print("Error: cat_id is required")
         return
     try:
+        print(f"Attempting to save weight for cat {cat_id}: {weight_kg} kg on {weight_dt}")
         data = get_cat(cat_id)
         if not data:
             print(f"Cat {cat_id} not found, cannot save weight")
             return
         weights = data.get("weights", [])
+        print(f"Current weights count: {len(weights)}")
         
         # Remove existing entry for this date if exists
         weights = [w for w in weights if w.get("dt") != weight_dt]
@@ -288,7 +294,9 @@ def save_weight(cat_id: int, weight_dt: str, weight_kg: float):
         # Sort by date
         weights = sorted(weights, key=lambda x: x.get("dt", ""))
         data["weights"] = weights
+        print(f"Saving {len(weights)} weight entries for cat {cat_id}")
         storage_manager.write_json(data, f"data/cat_{cat_id}")
+        print(f"Successfully saved weight for cat {cat_id}")
     except Exception as e:
         print(f"Error saving weight: {e}")
         import traceback
@@ -546,12 +554,31 @@ def home():
         deleted_count = storage_manager.purge_all_data()
         return redirect(url_for("home"))
 
-    if action == "add_weight" and cat_id:
-        wdt = request.form.get("weight_dt") or date.today().isoformat()
-        wkg = float(request.form.get("weight_kg"))
-        save_weight(cat_id, wdt, wkg)
-        tab = request.form.get("current_tab", "log")
-        return redirect(url_for("home", cat_id=cat_id, tab=tab))
+    if action == "add_weight":
+        if not cat_id:
+            print("Error: add_weight action requires cat_id")
+            return redirect(url_for("home"))
+        try:
+            wdt = request.form.get("weight_dt") or date.today().isoformat()
+            wkg_str = request.form.get("weight_kg")
+            if not wkg_str:
+                print("Error: weight_kg is required")
+                return redirect(url_for("home", cat_id=cat_id, tab="log"))
+            wkg = float(wkg_str)
+            if wkg <= 0:
+                print("Error: weight must be positive")
+                return redirect(url_for("home", cat_id=cat_id, tab="log"))
+            save_weight(cat_id, wdt, wkg)
+            tab = request.form.get("current_tab", "log")
+            return redirect(url_for("home", cat_id=cat_id, tab=tab))
+        except ValueError as e:
+            print(f"Error parsing weight: {e}")
+            return redirect(url_for("home", cat_id=cat_id, tab="log"))
+        except Exception as e:
+            print(f"Error in add_weight: {e}")
+            import traceback
+            traceback.print_exc()
+            return redirect(url_for("home", cat_id=cat_id, tab="log"))
 
     if action == "add_food":
         name = (request.form.get("food_name") or "").strip()
