@@ -2,10 +2,11 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>Cat Feeding Planner</title>
+  <title>Cat Feeding Planner 🐾</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
   <style>
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
@@ -44,7 +45,14 @@
       border-radius: 14px;
       padding: 0.55rem 1.25rem;
       font-weight: 600;
-      box-shadow: 0 3px 8px rgba(13,110,253,.25);
+      box-shadow: 0 3px 8px rgba(233,30,99,.25);
+      background: linear-gradient(135deg, #e91e63 0%, #c2185b 100%);
+      border: none;
+    }
+    .btn-add-cat:hover {
+      background: linear-gradient(135deg, #c2185b 0%, #a0154a 100%);
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(233,30,99,.35);
     }
     .cat-profile-card {
       background: white;
@@ -67,11 +75,11 @@
       margin-bottom: 0.5rem;
     }
     .stat-card {
-      background: #f8f9fa;
+      background: linear-gradient(135deg, #fff5f5 0%, #f8f9fa 100%);
       border-radius: 8px;
       padding: 1.15rem;
       text-align: center;
-      border: 1px solid #f0f2f5;
+      border: 1px solid #ffe0e0;
     }
     .stat-label {
       font-size: 0.875rem;
@@ -93,8 +101,9 @@
       font-weight: 500;
     }
     .nav-tabs .nav-link.active {
-      color: #0d6efd;
+      color: #e91e63;
       font-weight: 600;
+      border-bottom-color: #e91e63;
     }
     h6 {
       font-weight: 600;
@@ -142,8 +151,8 @@
   <div class="header-section">
     <div class="row align-items-center g-3">
       <div class="col-lg-6 col-12">
-        <h2 class="mb-0">Cat Feeding Planner</h2>
-        <p class="text-muted mb-0">Track every cat’s meals, weights, and daily kcal in one cozy workspace.</p>
+        <h2 class="mb-0">Cat Feeding Planner 🐾</h2>
+        <p class="text-muted mb-0">Keep your furry friend healthy and happy with meal tracking made simple.</p>
       </div>
       <div class="col-lg-6 col-12">
         <div class="header-actions justify-content-lg-end">
@@ -221,14 +230,14 @@
   <div class="tab-content section-card mt-3">
     <!-- Dashboard -->
     <div class="tab-pane fade show active" id="dash">
-      <h6>Per-Meal Feeding Plan</h6>
+      <h6>Per-Meal Feeding Plan 🍽️</h6>
       {% if per_meal|length == 0 %}
-      <div class="text-muted mb-4">Please add weight measurements and create a 100% diet plan to see feeding amounts.</div>
+      <div class="text-muted mb-4">Add weight measurements and create a complete diet plan to see meal recommendations.</div>
       {% else %}
       {% set meals_per_day = selected_cat.meals_per_day|default(3)|int %}
       {% for meal_num in range(1, meals_per_day + 1) %}
       <div class="mb-4">
-        <h6 class="mb-2" style="color: #495057; font-size: 1rem;">
+        <h6 class="mb-2" style="color: #e91e63; font-size: 1rem; font-weight: 600;">
           {% if meal_num == 1 %}1st{% elif meal_num == 2 %}2nd{% elif meal_num == 3 %}3rd{% else %}{{ meal_num }}th{% endif %} Meal
         </h6>
         <div class="table-responsive">
@@ -395,8 +404,8 @@
 
     <!-- Diet Plan -->
     <div class="tab-pane fade" id="diet">
-      <h6>Create Diet Plan</h6>
-      <p class="text-muted mb-3">Set the percentage of daily kcal for each food. Total must equal 100%.</p>
+      <h6>Create Diet Plan 🥘</h6>
+      <p class="text-muted mb-3">Set the percentage of daily calories for each food. Total must equal 100%.</p>
       <form method="post">
         <input type="hidden" name="action" value="save_diet">
         <input type="hidden" name="cat_id" value="{{ cat_id }}">
@@ -436,7 +445,7 @@
           </table>
         </div>
         {% if foods|length > 0 %}
-        <div class="mt-3">
+        <div class="mt-4">
           <p>Total: <strong class="kmono" id="diet-total-pct" style="font-size: 1.1rem;">{{ total_pct|int }}%</strong> 
           <span id="diet-total-status">
             {% if total_pct != 100 %}
@@ -446,6 +455,68 @@
             {% endif %}
           </span>
           </p>
+        </div>
+        
+        <!-- Meal-Level Controls -->
+        {% set meals_per_day = selected_cat.meals_per_day|default(3)|int %}
+        {% if total_pct == 100 %}
+        <div class="mt-4 p-3" style="background: #fff5f5; border-radius: 8px; border: 1px solid #ffe0e0;">
+          <h6 class="mb-3" style="color: #e91e63;">Meal Settings 🍽️</h6>
+          
+          <!-- Calories per Meal -->
+          <div class="mb-4">
+            <label class="form-label mb-2"><strong>Calories per Meal (%)</strong></label>
+            <p class="text-muted small mb-2">Distribute daily calories across meals. Total must equal 100%.</p>
+            <div class="row g-2">
+              {% for meal_num in range(1, meals_per_day + 1) %}
+              <div class="col-md-3">
+                <label class="form-label small">
+                  {% if meal_num == 1 %}1st{% elif meal_num == 2 %}2nd{% elif meal_num == 3 %}3rd{% else %}{{ meal_num }}th{% endif %} Meal
+                </label>
+                <input type="number" class="form-control form-control-sm meal-kcal-input" 
+                       name="meal_kcal_{{ meal_num }}" 
+                       value="{{ (100 / meals_per_day)|round|int }}" 
+                       min="0" max="100" step="1" 
+                       {% if total_pct != 100 %}disabled{% endif %}
+                       oninput="updateMealKcalTotal()">
+                <small class="text-muted">%</small>
+              </div>
+              {% endfor %}
+            </div>
+            <p class="mt-2 mb-0">
+              <small>Meal Calories Total: <strong class="kmono" id="meal-kcal-total">{{ meals_per_day * (100 / meals_per_day)|round|int }}%</strong></small>
+            </p>
+          </div>
+          
+          <!-- Wet/Dry Food Proportion per Meal -->
+          <div class="mb-3">
+            <label class="form-label mb-2"><strong>Wet vs Dry Food per Meal</strong></label>
+            <p class="text-muted small mb-2">Set the proportion of wet food for each meal. Remaining is dry food.</p>
+            <div class="row g-2">
+              {% for meal_num in range(1, meals_per_day + 1) %}
+              <div class="col-md-3">
+                <label class="form-label small">
+                  {% if meal_num == 1 %}1st{% elif meal_num == 2 %}2nd{% elif meal_num == 3 %}3rd{% else %}{{ meal_num }}th{% endif %} Meal
+                </label>
+                <div class="input-group input-group-sm">
+                  <input type="number" class="form-control meal-wet-input" 
+                         name="meal_wet_{{ meal_num }}" 
+                         value="50" 
+                         min="0" max="100" step="5"
+                         {% if total_pct != 100 %}disabled{% endif %}>
+                  <span class="input-group-text">% wet</span>
+                </div>
+                <small class="text-muted d-block mt-1">
+                  <span class="kmono" id="meal-dry-{{ meal_num }}">50%</span> dry
+                </small>
+              </div>
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+        {% endif %}
+        
+        <div class="mt-3">
           <button type="submit" id="save-diet-btn" class="btn btn-primary" {% if total_pct == 100 %}style="display: none;"{% endif %}>Save Diet Plan</button>
           {% if total_pct == 100 %}
           <button type="button" id="edit-diet-btn" class="btn btn-outline-secondary ms-2" onclick="enableDietEdit()">
@@ -603,16 +674,24 @@ if (trend && trend.length > 0) {
   wChartEmpty.style.display = 'none';
   kChartEmpty.style.display = 'none';
 
+  // Convert labels to date objects for proper time scale
+  const dateLabels = labels.map(d => new Date(d));
+  
+  // Create data points with dates
+  const wDataPoints = dateLabels.map((date, i) => ({ x: date, y: wdata[i] }));
+  const kDataPoints = dateLabels.map((date, i) => ({ x: date, y: kdata[i] }));
+
   new Chart(wChartCanvas, {
     type: 'line',
     data: { 
-      labels: labels, 
       datasets: [{ 
         label: 'Weight (kg)', 
-        data: wdata,
-        borderColor: 'rgb(13, 110, 253)',
-        backgroundColor: 'rgba(13, 110, 253, 0.1)',
-        tension: 0.4
+        data: wDataPoints,
+        borderColor: 'rgb(233, 30, 99)',
+        backgroundColor: 'rgba(233, 30, 99, 0.1)',
+        tension: 0.4,
+        pointRadius: 4,
+        pointHoverRadius: 6
       }] 
     },
     options: { 
@@ -623,7 +702,18 @@ if (trend && trend.length > 0) {
           beginAtZero: false
         }, 
         x: { 
-          ticks: { maxRotation: 45, minRotation: 45 } 
+          type: 'time',
+          time: {
+            unit: 'day',
+            displayFormats: {
+              day: 'MMM d, yyyy'
+            }
+          },
+          ticks: { 
+            maxRotation: 45, 
+            minRotation: 45,
+            source: 'data'
+          } 
         } 
       } 
     }
@@ -631,13 +721,14 @@ if (trend && trend.length > 0) {
   new Chart(kChartCanvas, {
     type: 'line',
     data: { 
-      labels: labels, 
       datasets: [{ 
         label: 'Target kcal per Day', 
-        data: kdata,
-        borderColor: 'rgb(25, 135, 84)',
-        backgroundColor: 'rgba(25, 135, 84, 0.1)',
-        tension: 0.4
+        data: kDataPoints,
+        borderColor: 'rgb(76, 175, 80)',
+        backgroundColor: 'rgba(76, 175, 80, 0.1)',
+        tension: 0.4,
+        pointRadius: 4,
+        pointHoverRadius: 6
       }] 
     },
     options: { 
@@ -648,7 +739,18 @@ if (trend && trend.length > 0) {
           beginAtZero: false
         },
         x: { 
-          ticks: { maxRotation: 45, minRotation: 45 } 
+          type: 'time',
+          time: {
+            unit: 'day',
+            displayFormats: {
+              day: 'MMM d, yyyy'
+            }
+          },
+          ticks: { 
+            maxRotation: 45, 
+            minRotation: 45,
+            source: 'data'
+          } 
         } 
       } 
     }
@@ -736,10 +838,20 @@ if (trend && trend.length > 0) {
 // Enable diet editing
 function enableDietEdit() {
   const dietInputs = document.querySelectorAll('.diet-pct-input');
+  const mealKcalInputs = document.querySelectorAll('.meal-kcal-input');
+  const mealWetInputs = document.querySelectorAll('.meal-wet-input');
   const saveBtn = document.getElementById('save-diet-btn');
   const editBtn = document.getElementById('edit-diet-btn');
   
   dietInputs.forEach(function(input) {
+    input.disabled = false;
+  });
+  
+  mealKcalInputs.forEach(function(input) {
+    input.disabled = false;
+  });
+  
+  mealWetInputs.forEach(function(input) {
     input.disabled = false;
   });
   
@@ -751,6 +863,61 @@ function enableDietEdit() {
     editBtn.style.display = 'none';
   }
 }
+
+// Update meal kcal total
+function updateMealKcalTotal() {
+  const mealKcalInputs = document.querySelectorAll('.meal-kcal-input');
+  let total = 0;
+  mealKcalInputs.forEach(function(input) {
+    if (!input.disabled) {
+      total += parseFloat(input.value) || 0;
+    }
+  });
+  const totalElement = document.getElementById('meal-kcal-total');
+  if (totalElement) {
+    totalElement.textContent = Math.round(total) + '%';
+    if (total === 100) {
+      totalElement.style.color = '#28a745';
+    } else {
+      totalElement.style.color = '#dc3545';
+    }
+  }
+}
+
+// Initialize meal controls
+(function() {
+  // Update dry food percentage when wet food changes
+  const mealWetInputs = document.querySelectorAll('.meal-wet-input');
+  mealWetInputs.forEach(function(input) {
+    input.addEventListener('input', function() {
+      if (!this.disabled) {
+        const mealNum = this.name.match(/\d+/)[0];
+        const wetPct = parseFloat(this.value) || 0;
+        const dryPct = 100 - wetPct;
+        const dryElement = document.getElementById('meal-dry-' + mealNum);
+        if (dryElement) {
+          dryElement.textContent = Math.round(dryPct) + '%';
+        }
+      }
+    });
+    
+    // Initialize dry percentage on load
+    const mealNum = input.name.match(/\d+/)[0];
+    const wetPct = parseFloat(input.value) || 0;
+    const dryPct = 100 - wetPct;
+    const dryElement = document.getElementById('meal-dry-' + mealNum);
+    if (dryElement) {
+      dryElement.textContent = Math.round(dryPct) + '%';
+    }
+  });
+  
+  // Initialize meal kcal total
+  const mealKcalInputs = document.querySelectorAll('.meal-kcal-input');
+  mealKcalInputs.forEach(function(input) {
+    input.addEventListener('input', updateMealKcalTotal);
+  });
+  updateMealKcalTotal();
+})();
 </script>
 </body>
 </html>
