@@ -64,10 +64,65 @@ def der_factor(stage: str) -> float:
 def der_kcal(weight_kg: float, stage: str) -> float:
     return rer_kcal(weight_kg) * der_factor(stage)
 
-def format_age_display(age_weeks: float) -> str:
+def format_age_display(age_weeks: float, birthday_date: Optional[date] = None) -> str:
+    """Format age display. If birthday_date is provided, calculates months based on calendar dates."""
     if age_weeks is None or age_weeks < 0:
         return "—"
+    
     weeks = int(round(age_weeks))
+    
+    # If we have the birthday date, calculate months based on actual calendar dates
+    if birthday_date and weeks >= 4:
+        today = date.today()
+        # Calculate months and days difference
+        years_diff = today.year - birthday_date.year
+        months_diff = today.month - birthday_date.month
+        days_diff = today.day - birthday_date.day
+        
+        # Adjust for negative days
+        if days_diff < 0:
+            months_diff -= 1
+            # Get days in previous month
+            if today.month == 1:
+                prev_month = 12
+                prev_year = today.year - 1
+            else:
+                prev_month = today.month - 1
+                prev_year = today.year
+            days_in_prev_month = (date(prev_year, prev_month + 1, 1) - date(prev_year, prev_month, 1)).days
+            days_diff = days_in_prev_month + days_diff
+        
+        # Adjust for negative months
+        if months_diff < 0:
+            years_diff -= 1
+            months_diff = 12 + months_diff
+        
+        total_months = years_diff * 12 + months_diff
+        rem_weeks = days_diff // 7
+        
+        if weeks < 12:
+            # For very young kittens, show weeks only
+            return f"{weeks} week{'s' if weeks != 1 else ''}"
+        elif total_months < 12:
+            # Show months and weeks
+            parts = []
+            if total_months:
+                parts.append(f"{total_months} month{'s' if total_months != 1 else ''}")
+            if rem_weeks:
+                parts.append(f"{rem_weeks} week{'s' if rem_weeks != 1 else ''}")
+            return " ".join(parts) if parts else "0 months"
+        else:
+            # Show years, months, and weeks
+            years = total_months // 12
+            months = total_months % 12
+            parts = [f"{years} year{'s' if years != 1 else ''}"]
+            if months:
+                parts.append(f"{months} month{'s' if months != 1 else ''}")
+            if rem_weeks:
+                parts.append(f"{rem_weeks} week{'s' if rem_weeks != 1 else ''}")
+            return " ".join(parts)
+    
+    # Fallback to week-based calculation if no birthday date provided
     if weeks < 12:
         return f"{weeks} week{'s' if weeks != 1 else ''}"
     if weeks < 52:
@@ -725,6 +780,7 @@ def home():
     # Calculate age and stage - only from birthday
     birthday = selected_cat.get("birthday")
     age_weeks = 0.0
+    birthday_date = None
     if birthday:
         try:
             birthday_date = date.fromisoformat(birthday)
@@ -734,7 +790,7 @@ def home():
             age_weeks = 0.0
     
     stage = (selected_cat.get("life_stage_override") or "") or infer_life_stage(age_weeks)
-    age_display = format_age_display(age_weeks)
+    age_display = format_age_display(age_weeks, birthday_date)
     stage_display = format_life_stage(stage)
 
     latest_w = None
