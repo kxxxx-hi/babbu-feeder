@@ -58,7 +58,10 @@ class VercelBlobStorage:
                     print(f"No blobs returned for prefix '{key}'")
                     
                 # Find exact match or closest match (blob name starting with key)
+                # Prefer exact matches, then suffix matches
                 matching_blob = None
+                suffix_matches = []
+                
                 for blob in blobs:
                     pathname = blob.get("pathname", "")
                     # Debug
@@ -71,14 +74,17 @@ class VercelBlobStorage:
                     # Check if pathname starts with key followed by "-" (handles Vercel suffixes)
                     # e.g., "data/cat_1" matches "data/cat_1-76udXzISNAw3ujt1sYxLI8g46URz0M"
                     elif pathname.startswith(key + "-"):
-                        matching_blob = blob
+                        suffix_matches.append(blob)
                         print(f"Found blob with suffix: {pathname}")
-                        break
                     # Also check for directory-style (key + "/")
                     elif pathname.startswith(key + "/"):
-                        matching_blob = blob
+                        suffix_matches.append(blob)
                         print(f"Found blob in subdirectory: {pathname}")
-                        break
+                
+                # If no exact match, use the first suffix match (should be only one after our cleanup)
+                if not matching_blob and suffix_matches:
+                    matching_blob = suffix_matches[0]
+                    print(f"Using suffix match: {matching_blob.get('pathname')}")
                     
                 if matching_blob:
                     print(f"Matched blob metadata: {matching_blob}")
@@ -123,12 +129,22 @@ class VercelBlobStorage:
             traceback.print_exc()
             return {}
     
-    def write_json(self, data: Dict[str, Any], key: str):
-        """Write JSON data to Vercel Blob Storage"""
+    def write_json(self, data: Dict[str, Any], key: str) -> bool:
+        """Write JSON data to Vercel Blob Storage. Returns True if successful, False otherwise."""
         try:
             if not self.token:
                 print("Warning: BLOB_READ_WRITE_TOKEN not set, cannot save data")
-                return
+                return False
+            
+            # Delete any existing blobs with the same prefix to avoid duplicates
+            # Vercel Blob Storage may create blobs with suffixes, so we need to clean up old ones
+            existing_blobs = self.list_blobs(prefix=key)
+            for blob in existing_blobs:
+                pathname = blob.get("pathname", "")
+                # Delete blobs that match the key exactly or start with key + "-" (Vercel suffix pattern)
+                if pathname == key or pathname.startswith(key + "-"):
+                    print(f"Deleting old blob before write: {pathname}")
+                    self.delete_blob(pathname)
             
             # Convert data to JSON string
             json_data = json.dumps(data, indent=2)
@@ -146,15 +162,19 @@ class VercelBlobStorage:
             if response.status_code in [200, 201]:
                 result = response.json()
                 print(f"Successfully saved {key} to Vercel Blob: {result.get('url', 'N/A')}")
+                return True
             else:
                 print(f"Error saving to Vercel Blob: HTTP {response.status_code}")
                 print(f"Response: {response.text}")
+                return False
         except requests.exceptions.RequestException as e:
             print(f"Network error writing to Vercel Blob: {e}")
+            return False
         except Exception as e:
             print(f"Error writing to Vercel Blob: {e}")
             import traceback
             traceback.print_exc()
+            return False
     
     def delete_blob(self, key: str) -> bool:
         """Delete a blob from Vercel Blob Storage"""

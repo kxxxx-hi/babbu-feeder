@@ -87,6 +87,52 @@ def format_age_display(age_weeks: float) -> str:
         parts.append(f"{months} month{'s' if months != 1 else ''}")
     return " ".join(parts)
 
+def format_life_stage(stage: str) -> str:
+    """Format life stage string to be human-readable"""
+    if not stage:
+        return "Unknown"
+    
+    stage_lower = stage.lower()
+    
+    # Map stage codes to human-readable format
+    stage_map = {
+        "kitten_0_4m": "Kitten 0–4 months",
+        "kitten_4_12m": "Kitten 4–12 months",
+        "adult_neutered": "Adult (Neutered)",
+        "adult_intact": "Adult (Intact)",
+        "adult_obese_prone": "Adult (Obese-Prone)"
+    }
+    
+    return stage_map.get(stage_lower, stage.replace("_", " ").title())
+
+def estimate_weight_by_age(age_weeks: float) -> float:
+    """Estimate typical weight in kg based on age in weeks for generic kcal calculation"""
+    if age_weeks < 0:
+        return 0.1  # Newborn
+    
+    # Typical kitten growth pattern
+    if age_weeks < 4:
+        # 0-4 weeks: 0.1-0.3 kg
+        return 0.1 + (age_weeks / 4) * 0.2
+    elif age_weeks < 8:
+        # 4-8 weeks: 0.3-0.6 kg
+        return 0.3 + ((age_weeks - 4) / 4) * 0.3
+    elif age_weeks < 12:
+        # 8-12 weeks: 0.6-1.0 kg
+        return 0.6 + ((age_weeks - 8) / 4) * 0.4
+    elif age_weeks < 16:
+        # 12-16 weeks: 1.0-1.5 kg
+        return 1.0 + ((age_weeks - 12) / 4) * 0.5
+    elif age_weeks < 26:
+        # 4-6 months: 1.5-2.5 kg
+        return 1.5 + ((age_weeks - 16) / 10) * 1.0
+    elif age_weeks < 52:
+        # 6-12 months: 2.5-4.0 kg
+        return 2.5 + ((age_weeks - 26) / 26) * 1.5
+    else:
+        # Adult: 3.5-5.5 kg (use average of 4.5 kg)
+        return 4.5
+
 def calories_per_kg(food: dict) -> Optional[float]:
     """Return kcal per 1000 g for a food entry, converting legacy fields if needed."""
     if not food:
@@ -265,20 +311,20 @@ def get_weights(cat_id: int):
         print(f"Error reading weights: {e}")
         return []
 
-def save_weight(cat_id: int, weight_dt: str, weight_kg: float):
-    """Save weight log for a specific cat"""
+def save_weight(cat_id: int, weight_dt: str, weight_kg: float) -> bool:
+    """Save weight log for a specific cat. Returns True if successful, False otherwise."""
     if not STORAGE_AVAILABLE:
         print("Error: Storage not available")
-        return
+        return False
     if not cat_id:
         print("Error: cat_id is required")
-        return
+        return False
     try:
         print(f"Attempting to save weight for cat {cat_id}: {weight_kg} kg on {weight_dt}")
         data = get_cat(cat_id)
         if not data:
             print(f"Cat {cat_id} not found, cannot save weight")
-            return
+            return False
         weights = data.get("weights", [])
         print(f"Current weights count: {len(weights)}")
         
@@ -295,12 +341,26 @@ def save_weight(cat_id: int, weight_dt: str, weight_kg: float):
         weights = sorted(weights, key=lambda x: x.get("dt", ""))
         data["weights"] = weights
         print(f"Saving {len(weights)} weight entries for cat {cat_id}")
-        storage_manager.write_json(data, f"data/cat_{cat_id}")
-        print(f"Successfully saved weight for cat {cat_id}")
+        
+        # Write and verify success
+        success = storage_manager.write_json(data, f"data/cat_{cat_id}")
+        if success:
+            # Verify the write by reading it back
+            verify_data = get_cat(cat_id)
+            if verify_data and len(verify_data.get("weights", [])) == len(weights):
+                print(f"Successfully saved and verified weight for cat {cat_id}")
+                return True
+            else:
+                print(f"Warning: Weight save may have failed - verification read returned {len(verify_data.get('weights', [])) if verify_data else 0} weights, expected {len(weights)}")
+                return False
+        else:
+            print(f"Error: Failed to save weight for cat {cat_id}")
+            return False
     except Exception as e:
         print(f"Error saving weight: {e}")
         import traceback
         traceback.print_exc()
+        return False
 
 def get_foods():
     """Get foods from Vercel Blob Storage"""
@@ -574,7 +634,10 @@ def home():
                 print("Error: weight must be positive")
                 return redirect(url_for("home", cat_id=cat_id, tab="log"))
             print(f"Calling save_weight with cat_id={cat_id}, wdt={wdt}, wkg={wkg}")
-            save_weight(cat_id, wdt, wkg)
+            success = save_weight(cat_id, wdt, wkg)
+            if not success:
+                print(f"Warning: Weight save may have failed for cat {cat_id}")
+                # Still redirect but log the warning - user can check logs
             tab = request.form.get("current_tab", "log")
             print(f"Redirecting to home with cat_id={cat_id}, tab={tab}")
             return redirect(url_for("home", cat_id=cat_id, tab=tab))
@@ -612,18 +675,19 @@ def home():
 
     if action == "save_diet" and cat_id:
         foods = get_foods()
-        total = 0.0
+        total = 0
         diet_list = []
         for food in foods:
             fid = food["id"]
-            pct = float(request.form.get(f"diet_pct_{fid}", "0") or "0")
+            pct_str = request.form.get(f"diet_pct_{fid}", "0") or "0"
+            pct = int(float(pct_str))  # Convert to integer
             total += pct
             if pct > 0:
                 diet_list.append({
                     "food_id": fid,
-                    "pct_daily_kcal": pct
+                    "pct_daily_kcal": float(pct)  # Store as float for consistency but value is integer
                 })
-        if round(total, 1) == 100.0:
+        if total == 100:
             save_diet(cat_id, diet_list)
         tab = request.form.get("current_tab", "diet")
         return redirect(url_for("home", cat_id=cat_id, tab=tab))
@@ -671,11 +735,21 @@ def home():
     
     stage = (selected_cat.get("life_stage_override") or "") or infer_life_stage(age_weeks)
     age_display = format_age_display(age_weeks)
+    stage_display = format_life_stage(stage)
 
     latest_w = None
     if not weights_df.empty:
         latest_w = float(weights_df.iloc[-1]["weight_kg"])
-    daily_kcal = der_kcal(latest_w, stage) if latest_w else None
+    
+    # Calculate daily kcal - use actual weight if available, otherwise estimate based on age
+    if latest_w:
+        daily_kcal = der_kcal(latest_w, stage)
+    elif age_weeks > 0:
+        # Estimate weight based on age for generic kcal calculation
+        estimated_weight = estimate_weight_by_age(age_weeks)
+        daily_kcal = der_kcal(estimated_weight, stage)
+    else:
+        daily_kcal = None
 
     # charts data - calculate age from birthday only
     trend = []
@@ -699,8 +773,8 @@ def home():
     if daily_kcal and not diet_df.empty and not foods_df.empty:
         per_meal = kcal_split(daily_kcal, int(selected_cat.get("meals_per_day", 3)), diet_list, foods_list)
 
-    # for diet form display
-    diet_map = {int(r["food_id"]): float(r["pct_daily_kcal"]) for _, r in diet_df.iterrows()} if not diet_df.empty else {}
+    # for diet form display - convert to integers for display
+    diet_map = {int(r["food_id"]): int(round(float(r["pct_daily_kcal"]))) for _, r in diet_df.iterrows()} if not diet_df.empty else {}
 
     return render_template(
         "index.html",
@@ -710,13 +784,14 @@ def home():
         age_weeks=age_weeks,
         age_display=age_display,
         stage=stage,
+        stage_display=stage_display,
         latest_w=latest_w,
         daily_kcal=daily_kcal,
         weights_list=weights_list,
         per_meal=per_meal.to_dict(orient="records"),
         foods=foods_list,
         diet_map=diet_map,
-        total_pct=round(sum(diet_map.values()), 1) if diet_map else 0.0,
+        total_pct=int(round(sum(diet_map.values()))) if diet_map else 0,
         trend=trend,
         current_tab=current_tab
     )

@@ -111,6 +111,15 @@
     .tab-content.section-card .tab-pane {
       padding: 0;
     }
+    .chart-empty-state {
+      min-height: 200px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #f8f9fa;
+      border-radius: 8px;
+      border: 1px dashed #dee2e6;
+    }
     @media (max-width: 768px) {
       .header-actions {
         width: 100%;
@@ -173,7 +182,7 @@
         <div class="text-muted mb-3">
           <strong>Birthday:</strong> {{ selected_cat.birthday if selected_cat.birthday else "Not set" }} &nbsp;|&nbsp;
           <strong>Current Age:</strong> {{ age_display }} &nbsp;|&nbsp;
-          <strong>Life Stage:</strong> {{ stage.replace("_", " ").title() }}
+          <strong>Life Stage:</strong> {{ stage_display }}
         </div>
         <div class="row g-3">
           <div class="col-md-3">
@@ -244,11 +253,35 @@
       <div class="row g-4 mt-2">
         <div class="col-md-6">
           <h6>Weight Over Time</h6>
-          <canvas id="wChart"></canvas>
+          <div id="wChartContainer">
+            <canvas id="wChart"></canvas>
+            <div id="wChartEmpty" class="chart-empty-state" style="display: none;">
+              <div class="text-center py-5">
+                <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" fill="currentColor" class="text-muted mb-3" viewBox="0 0 16 16" style="opacity: 0.5;">
+                  <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14m0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16"/>
+                  <path d="M7.002 11a1 1 0 1 1 2 0 1 1 0 0 1-2 0M7.1 4.995a.905.905 0 1 1 1.8 0l-.35 3.507a.552.552 0 0 1-1.1 0z"/>
+                </svg>
+                <p class="text-muted mb-0">No weight data yet</p>
+                <p class="text-muted small">Add weight measurements to see the chart</p>
+              </div>
+            </div>
+          </div>
         </div>
         <div class="col-md-6">
           <h6>Target kcal per Day Over Time</h6>
-          <canvas id="kChart"></canvas>
+          <div id="kChartContainer">
+            <canvas id="kChart"></canvas>
+            <div id="kChartEmpty" class="chart-empty-state" style="display: none;">
+              <div class="text-center py-5">
+                <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" fill="currentColor" class="text-muted mb-3" viewBox="0 0 16 16" style="opacity: 0.5;">
+                  <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14m0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16"/>
+                  <path d="M7.002 11a1 1 0 1 1 2 0 1 1 0 0 1-2 0M7.1 4.995a.905.905 0 1 1 1.8 0l-.35 3.507a.552.552 0 0 1-1.1 0z"/>
+                </svg>
+                <p class="text-muted mb-0">No kcal data yet</p>
+                <p class="text-muted small">Add weight measurements to see the chart</p>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -374,7 +407,7 @@
                 <td><strong>{{ f.name }}</strong></td>
                 <td>
                   <input class="form-control form-control-sm" type="number" step="1" min="0" max="100"
-                         name="diet_pct_{{ f.id }}" value="{{ diet_map.get(f.id, 0.0) }}" required>
+                         name="diet_pct_{{ f.id }}" value="{{ diet_map.get(f.id, 0)|int }}" required>
                 </td>
               </tr>
             {% endfor %}
@@ -386,8 +419,8 @@
         </div>
         {% if foods|length > 0 %}
         <div class="mt-3">
-          <p>Total: <strong class="kmono" style="font-size: 1.1rem;">{{ "%.1f"|format(total_pct) }}%</strong> 
-          {% if total_pct != 100.0 %}
+          <p>Total: <strong class="kmono" style="font-size: 1.1rem;">{{ total_pct|int }}%</strong> 
+          {% if total_pct != 100 %}
             <span class="text-danger">(must be exactly 100%)</span>
           {% else %}
             <span class="text-success">✓</span>
@@ -529,12 +562,23 @@
 
 // Charts
 const trend = JSON.parse('{{ trend|tojson|safe }}');
-const labels = trend.map(r => r.dt);
-const wdata  = trend.map(r => r.weight_kg);
-const kdata  = trend.map(r => r.der_kcal);
+const wChartCanvas = document.getElementById('wChart');
+const kChartCanvas = document.getElementById('kChart');
+const wChartEmpty = document.getElementById('wChartEmpty');
+const kChartEmpty = document.getElementById('kChartEmpty');
 
-if (labels.length > 0) {
-  new Chart(document.getElementById('wChart'), {
+if (trend && trend.length > 0) {
+  const labels = trend.map(r => r.dt);
+  const wdata  = trend.map(r => r.weight_kg);
+  const kdata  = trend.map(r => r.der_kcal);
+
+  // Show charts, hide empty states
+  wChartCanvas.style.display = 'block';
+  kChartCanvas.style.display = 'block';
+  wChartEmpty.style.display = 'none';
+  kChartEmpty.style.display = 'none';
+
+  new Chart(wChartCanvas, {
     type: 'line',
     data: { 
       labels: labels, 
@@ -559,7 +603,7 @@ if (labels.length > 0) {
       } 
     }
   });
-  new Chart(document.getElementById('kChart'), {
+  new Chart(kChartCanvas, {
     type: 'line',
     data: { 
       labels: labels, 
@@ -584,6 +628,12 @@ if (labels.length > 0) {
       } 
     }
   });
+} else {
+  // Hide charts, show empty states
+  wChartCanvas.style.display = 'none';
+  kChartCanvas.style.display = 'none';
+  wChartEmpty.style.display = 'block';
+  kChartEmpty.style.display = 'block';
 }
 </script>
 </body>
