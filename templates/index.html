@@ -225,30 +225,36 @@
       {% if per_meal|length == 0 %}
       <div class="text-muted mb-4">Please add weight measurements and create a 100% diet plan to see feeding amounts.</div>
       {% else %}
-      <div class="table-responsive">
-        <table class="table table-sm">
-          <thead>
-            <tr>
-              <th>Food</th>
-              <th>% Daily kcal</th>
-              <th>kcal per Day</th>
-              <th>kcal per Meal</th>
-              <th>Grams per Meal</th>
-            </tr>
-          </thead>
-          <tbody>
-          {% for r in per_meal %}
-            <tr>
-              <td><strong>{{ r.Food }}</strong></td>
-              <td class="kmono">{{ "%.1f"|format(r.pct) }}%</td>
-              <td class="kmono">{{ "%.1f"|format(r.kcal_day) }} kcal</td>
-              <td class="kmono">{{ "%.1f"|format(r.kcal_meal) }} kcal</td>
-              <td class="kmono">{{ "%.1f"|format(r.grams_per_meal) if r.grams_per_meal is not none else "—" }} g</td>
-            </tr>
-          {% endfor %}
-          </tbody>
-        </table>
+      {% set meals_per_day = selected_cat.meals_per_day|default(3)|int %}
+      {% for meal_num in range(1, meals_per_day + 1) %}
+      <div class="mb-4">
+        <h6 class="mb-2" style="color: #495057; font-size: 1rem;">
+          {% if meal_num == 1 %}1st{% elif meal_num == 2 %}2nd{% elif meal_num == 3 %}3rd{% else %}{{ meal_num }}th{% endif %} Meal
+        </h6>
+        <div class="table-responsive">
+          <table class="table table-sm table-bordered">
+            <thead class="table-light">
+              <tr>
+                <th>Food</th>
+                <th>% Daily kcal</th>
+                <th>kcal per Meal</th>
+                <th>Grams per Meal</th>
+              </tr>
+            </thead>
+            <tbody>
+            {% for r in per_meal %}
+              <tr>
+                <td><strong>{{ r.Food }}</strong></td>
+                <td class="kmono">{{ "%.1f"|format(r.pct) }}%</td>
+                <td class="kmono">{{ "%.1f"|format(r.kcal_meal) }} kcal</td>
+                <td class="kmono">{{ "%.1f"|format(r.grams_per_meal) if r.grams_per_meal is not none else "—" }} g</td>
+              </tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        </div>
       </div>
+      {% endfor %}
       {% endif %}
 
       <div class="row g-4 mt-2">
@@ -411,7 +417,8 @@
                 <td>
                   <input class="form-control form-control-sm diet-pct-input" type="number" step="1" min="0" max="100"
                          name="diet_pct_{{ f.id }}" value="{{ diet_map.get(f.id, 0)|int }}" 
-                         data-food-id="{{ f.id }}" data-kcal-per-kg="{{ f.kcal_per_kg or 0 }}" required>
+                         data-food-id="{{ f.id }}" data-kcal-per-kg="{{ f.kcal_per_kg or 0 }}" 
+                         {% if total_pct == 100 %}disabled{% endif %} required>
                 </td>
                 <td class="kmono grams-recommendation" data-food-id="{{ f.id }}">
                   {% if grams_recommendations.get(f.id) %}
@@ -439,9 +446,9 @@
             {% endif %}
           </span>
           </p>
-          <button type="submit" class="btn btn-primary">Save Diet Plan</button>
+          <button type="submit" id="save-diet-btn" class="btn btn-primary" {% if total_pct == 100 %}style="display: none;"{% endif %}>Save Diet Plan</button>
           {% if total_pct == 100 %}
-          <button type="button" class="btn btn-outline-secondary ms-2" onclick="document.querySelectorAll('.diet-pct-input').forEach(input => input.disabled = false); this.style.display='none'; document.querySelector('button[type=\'submit\']').style.display='inline-block';">
+          <button type="button" id="edit-diet-btn" class="btn btn-outline-secondary ms-2" onclick="enableDietEdit()">
             Edit Diet Plan
           </button>
           {% endif %}
@@ -664,6 +671,8 @@ if (trend && trend.length > 0) {
   const dietInputs = document.querySelectorAll('.diet-pct-input');
   const totalPctElement = document.getElementById('diet-total-pct');
   const totalStatusElement = document.getElementById('diet-total-status');
+  const saveBtn = document.getElementById('save-diet-btn');
+  const editBtn = document.getElementById('edit-diet-btn');
   
   function updateTotal() {
     let total = 0;
@@ -711,16 +720,37 @@ if (trend && trend.length > 0) {
   dietInputs.forEach(function(input) {
     calculateGrams(input);
     
-    // Recalculate on input change
+    // Recalculate on input change (only if not disabled)
     input.addEventListener('input', function() {
-      calculateGrams(this);
-      updateTotal();
+      if (!this.disabled) {
+        calculateGrams(this);
+        updateTotal();
+      }
     });
   });
   
   // Update total on page load
   updateTotal();
 })();
+
+// Enable diet editing
+function enableDietEdit() {
+  const dietInputs = document.querySelectorAll('.diet-pct-input');
+  const saveBtn = document.getElementById('save-diet-btn');
+  const editBtn = document.getElementById('edit-diet-btn');
+  
+  dietInputs.forEach(function(input) {
+    input.disabled = false;
+  });
+  
+  if (saveBtn) {
+    saveBtn.style.display = 'inline-block';
+  }
+  
+  if (editBtn) {
+    editBtn.style.display = 'none';
+  }
+}
 </script>
 </body>
 </html>
