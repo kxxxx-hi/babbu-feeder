@@ -500,18 +500,32 @@ def save_diet(cat_id: int, diet_list: List[dict]) -> bool:
         if not data:
             print(f"Cat {cat_id} not found, cannot save diet")
             return False
+        # Preserve all other data when saving diet
         data["diet"] = diet_list
-        print(f"Saving diet plan for cat {cat_id} with {len(diet_list)} items")
+        print(f"Saving diet plan for cat {cat_id} with {len(diet_list)} items: {diet_list}")
         success = storage_manager.write_json(data, f"data/cat_{cat_id}")
         if success:
             # Verify the write by reading it back
             verify_data = get_cat(cat_id)
-            if verify_data and len(verify_data.get("diet", [])) == len(diet_list):
-                print(f"Successfully saved and verified diet plan for cat {cat_id}")
-                return True
+            if verify_data:
+                saved_diet = verify_data.get("diet", [])
+                # Check if the saved diet matches what we tried to save
+                if len(saved_diet) == len(diet_list):
+                    # Verify the food_ids match
+                    saved_food_ids = {item.get("food_id") for item in saved_diet}
+                    expected_food_ids = {item.get("food_id") for item in diet_list}
+                    if saved_food_ids == expected_food_ids:
+                        print(f"Successfully saved and verified diet plan for cat {cat_id}")
+                        return True
+                    else:
+                        print(f"Warning: Diet food_ids don't match. Saved: {saved_food_ids}, Expected: {expected_food_ids}")
+                else:
+                    print(f"Warning: Diet save verification - length mismatch. Saved: {len(saved_diet)}, Expected: {len(diet_list)}")
+                    print(f"Saved diet: {saved_diet}")
+                    print(f"Expected diet: {diet_list}")
             else:
-                print(f"Warning: Diet save may have failed - verification read returned {len(verify_data.get('diet', [])) if verify_data else 0} items, expected {len(diet_list)}")
-                return False
+                print(f"Warning: Could not read back saved data for cat {cat_id}")
+            return False
         else:
             print(f"Error: Failed to save diet plan for cat {cat_id}")
             return False

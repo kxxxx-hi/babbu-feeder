@@ -430,14 +430,21 @@
         </div>
         {% if foods|length > 0 %}
         <div class="mt-3">
-          <p>Total: <strong class="kmono" style="font-size: 1.1rem;">{{ total_pct|int }}%</strong> 
-          {% if total_pct != 100 %}
-            <span class="text-danger">(must be exactly 100%)</span>
-          {% else %}
-            <span class="text-success">✓</span>
-          {% endif %}
+          <p>Total: <strong class="kmono" id="diet-total-pct" style="font-size: 1.1rem;">{{ total_pct|int }}%</strong> 
+          <span id="diet-total-status">
+            {% if total_pct != 100 %}
+              <span class="text-danger">(must be exactly 100%)</span>
+            {% else %}
+              <span class="text-success">✓</span>
+            {% endif %}
+          </span>
           </p>
-          <button class="btn btn-primary">Save Diet Plan</button>
+          <button type="submit" class="btn btn-primary">Save Diet Plan</button>
+          {% if total_pct == 100 %}
+          <button type="button" class="btn btn-outline-secondary ms-2" onclick="document.querySelectorAll('.diet-pct-input').forEach(input => input.disabled = false); this.style.display='none'; document.querySelector('button[type=\'submit\']').style.display='inline-block';">
+            Edit Diet Plan
+          </button>
+          {% endif %}
         </div>
         {% endif %}
       </form>
@@ -647,7 +654,7 @@ if (trend && trend.length > 0) {
   kChartEmpty.style.display = 'block';
 }
 
-// Diet plan grams calculation
+// Diet plan grams calculation and total percentage
 (function() {
   const dailyKcalElement = document.getElementById('daily-kcal-value');
   if (!dailyKcalElement) return;
@@ -655,6 +662,27 @@ if (trend && trend.length > 0) {
   if (!dailyKcal || dailyKcal <= 0) return;
   
   const dietInputs = document.querySelectorAll('.diet-pct-input');
+  const totalPctElement = document.getElementById('diet-total-pct');
+  const totalStatusElement = document.getElementById('diet-total-status');
+  
+  function updateTotal() {
+    let total = 0;
+    dietInputs.forEach(function(input) {
+      total += parseFloat(input.value) || 0;
+    });
+    
+    if (totalPctElement) {
+      totalPctElement.textContent = Math.round(total) + '%';
+    }
+    
+    if (totalStatusElement) {
+      if (total === 100) {
+        totalStatusElement.innerHTML = '<span class="text-success">✓</span>';
+      } else {
+        totalStatusElement.innerHTML = '<span class="text-danger">(must be exactly 100%)</span>';
+      }
+    }
+  }
   
   function calculateGrams(input) {
     const pct = parseFloat(input.value) || 0;
@@ -679,15 +707,19 @@ if (trend && trend.length > 0) {
     }
   }
   
-  // Calculate grams for all inputs on page load
+  // Calculate grams and total for all inputs on page load
   dietInputs.forEach(function(input) {
     calculateGrams(input);
     
     // Recalculate on input change
     input.addEventListener('input', function() {
       calculateGrams(this);
+      updateTotal();
     });
   });
+  
+  // Update total on page load
+  updateTotal();
 })();
 </script>
 </body>
