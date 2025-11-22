@@ -59,18 +59,18 @@ class VercelBlobStorage:
                     
                 # Find exact match or closest match (blob name starting with key)
                 # Prefer exact matches, then suffix matches
-                matching_blob = None
+                # IMPORTANT: When multiple blobs match, use the most recent one (by uploadedAt)
+                matching_blobs = []
                 suffix_matches = []
                 
                 for blob in blobs:
                     pathname = blob.get("pathname", "")
                     # Debug
-                    print(f"  -> candidate blob pathname: {pathname}")
+                    print(f"  -> candidate blob pathname: {pathname}, uploadedAt: {blob.get('uploadedAt', 'unknown')}")
                     # Check for exact match first
                     if pathname == key:
-                        matching_blob = blob
+                        matching_blobs.append(blob)
                         print(f"Found exact match: {pathname}")
-                        break
                     # Check if pathname starts with key followed by "-" (handles Vercel suffixes)
                     # e.g., "data/cat_1" matches "data/cat_1-76udXzISNAw3ujt1sYxLI8g46URz0M"
                     elif pathname.startswith(key + "-"):
@@ -81,10 +81,18 @@ class VercelBlobStorage:
                         suffix_matches.append(blob)
                         print(f"Found blob in subdirectory: {pathname}")
                 
-                # If no exact match, use the first suffix match (should be only one after our cleanup)
-                if not matching_blob and suffix_matches:
+                # Select the most recent blob (by uploadedAt timestamp)
+                matching_blob = None
+                if matching_blobs:
+                    # Sort by uploadedAt descending (most recent first)
+                    matching_blobs.sort(key=lambda x: x.get("uploadedAt", ""), reverse=True)
+                    matching_blob = matching_blobs[0]
+                    print(f"Using most recent exact match: {matching_blob.get('pathname')} (uploadedAt: {matching_blob.get('uploadedAt')})")
+                elif suffix_matches:
+                    # Sort by uploadedAt descending (most recent first)
+                    suffix_matches.sort(key=lambda x: x.get("uploadedAt", ""), reverse=True)
                     matching_blob = suffix_matches[0]
-                    print(f"Using suffix match: {matching_blob.get('pathname')}")
+                    print(f"Using most recent suffix match: {matching_blob.get('pathname')} (uploadedAt: {matching_blob.get('uploadedAt')})")
                     
                 if matching_blob:
                     print(f"Matched blob metadata: {matching_blob}")
