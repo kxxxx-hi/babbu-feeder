@@ -218,32 +218,120 @@ def calories_per_kg(food: dict) -> Optional[float]:
     return None
 
 
-def kcal_split(total_kcal: float, meals_per_day: int, diet_list: List[dict], foods_list: List[dict]) -> pd.DataFrame:
+def kcal_split(total_kcal: float, meals_per_day: int, diet_list: List[dict], foods_list: List[dict], meal_settings: dict = None) -> pd.DataFrame:
+    """Calculate per-meal feeding plan. Returns DataFrame with meal_num, Food, pct, kcal_day, kcal_meal, grams_per_meal, food_type"""
     if total_kcal <= 0 or meals_per_day <= 0 or not diet_list or not foods_list:
-        return pd.DataFrame(columns=["Food","pct","kcal_day","kcal_meal","grams_per_meal"])
+        return pd.DataFrame(columns=["meal_num", "Food", "pct", "kcal_day", "kcal_meal", "grams_per_meal", "food_type"])
     
     foods_dict = {f["id"]: f for f in foods_list}
     out = []
-    for diet_item in diet_list:
-        fid = int(diet_item["food_id"])
-        pct = float(diet_item["pct_daily_kcal"])
-        kcal_day = total_kcal * pct / 100.0
-        kcal_meal = kcal_day / meals_per_day
-        food = foods_dict.get(fid)
-        if not food:
-            continue
-        kcal_per_kg = calories_per_kg(food)
-        if not kcal_per_kg or kcal_per_kg <= 0:
-            continue
-        # grams per meal = kcal_meal * 1000 / kcal_per_kg
-        grams_pm = (kcal_meal * 1000.0) / kcal_per_kg
-        out.append({
-            "Food": food["name"],
-            "pct": pct,
-            "kcal_day": round(kcal_day, 1),
-            "kcal_meal": round(kcal_meal, 1),
-            "grams_per_meal": round(grams_pm, 1),
-        })
+    
+    # Get meal kcal percentages (default to equal distribution)
+    meal_kcal_pcts = {}
+    if meal_settings and "meal_kcal" in meal_settings:
+        # Convert string keys to int for easier access
+        for k, v in meal_settings["meal_kcal"].items():
+            meal_kcal_pcts[int(k)] = float(v)
+    else:
+        # Default: equal distribution
+        for meal_num in range(1, meals_per_day + 1):
+            meal_kcal_pcts[meal_num] = 100.0 / meals_per_day
+    
+    # Get meal wet/dry proportions (default to 50/50)
+    meal_wet_pcts = {}
+    if meal_settings and "meal_wet" in meal_settings:
+        # Convert string keys to int for easier access
+        for k, v in meal_settings["meal_wet"].items():
+            meal_wet_pcts[int(k)] = float(v)
+    else:
+        # Default: 50% wet, 50% dry
+        for meal_num in range(1, meals_per_day + 1):
+            meal_wet_pcts[meal_num] = 50.0
+    
+    # Calculate per meal for each meal
+    for meal_num in range(1, meals_per_day + 1):
+        meal_kcal_pct = meal_kcal_pcts.get(meal_num, 100.0 / meals_per_day)
+        meal_wet_pct = meal_wet_pcts.get(meal_num, 50.0)
+        meal_dry_pct = 100.0 - meal_wet_pct
+        
+        # Total kcal for this meal
+        meal_total_kcal = total_kcal * meal_kcal_pct / 100.0
+        
+        # Split foods by type
+        wet_foods = []
+        dry_foods = []
+        for diet_item in diet_list:
+            fid = int(diet_item["food_id"])
+            pct = float(diet_item["pct_daily_kcal"])
+            food = foods_dict.get(fid)
+            if not food:
+                continue
+            food_type = food.get("food_type", "")
+            if food_type == "wet":
+                wet_foods.append({"food": food, "pct": pct})
+            elif food_type == "dry":
+                dry_foods.append({"food": food, "pct": pct})
+        
+        # Calculate total pct for wet and dry
+        total_wet_pct = sum(f["pct"] for f in wet_foods)
+        total_dry_pct = sum(f["pct"] for f in dry_foods)
+        
+        # Distribute meal calories between wet and dry based on proportions
+        meal_wet_kcal = meal_total_kcal * meal_wet_pct / 100.0 if total_wet_pct > 0 else 0
+        meal_dry_kcal = meal_total_kcal * meal_dry_pct / 100.0 if total_dry_pct > 0 else 0
+        
+        # Add wet foods
+        for item in wet_foods:
+            food = item["food"]
+            pct = item["pct"]
+            kcal_per_kg = calories_per_kg(food)
+            if not kcal_per_kg or kcal_per_kg <= 0:
+                continue
+            
+            # Calculate kcal for this food in this meal
+            if total_wet_pct > 0:
+                food_meal_kcal = meal_wet_kcal * (pct / total_wet_pct)
+            else:
+                food_meal_kcal = 0
+            
+            grams_pm = (food_meal_kcal * 1000.0) / kcal_per_kg if food_meal_kcal > 0 else 0
+            
+            out.append({
+                "meal_num": meal_num,
+                "Food": food["name"],
+                "pct": pct,
+                "kcal_day": total_kcal * pct / 100.0,
+                "kcal_meal": round(food_meal_kcal, 1),
+                "grams_per_meal": round(grams_pm, 1),
+                "food_type": "wet"
+            })
+        
+        # Add dry foods
+        for item in dry_foods:
+            food = item["food"]
+            pct = item["pct"]
+            kcal_per_kg = calories_per_kg(food)
+            if not kcal_per_kg or kcal_per_kg <= 0:
+                continue
+            
+            # Calculate kcal for this food in this meal
+            if total_dry_pct > 0:
+                food_meal_kcal = meal_dry_kcal * (pct / total_dry_pct)
+            else:
+                food_meal_kcal = 0
+            
+            grams_pm = (food_meal_kcal * 1000.0) / kcal_per_kg if food_meal_kcal > 0 else 0
+            
+            out.append({
+                "meal_num": meal_num,
+                "Food": food["name"],
+                "pct": pct,
+                "kcal_day": total_kcal * pct / 100.0,
+                "kcal_meal": round(food_meal_kcal, 1),
+                "grams_per_meal": round(grams_pm, 1),
+                "food_type": "dry"
+            })
+    
     return pd.DataFrame(out)
 
 # ---------- Vercel Blob Data helpers - Multiple Cats Support ----------
@@ -490,7 +578,7 @@ def get_diet(cat_id: int):
         print(f"Error reading diet: {e}")
         return []
 
-def save_diet(cat_id: int, diet_list: List[dict]) -> bool:
+def save_diet(cat_id: int, diet_list: List[dict], meal_settings: dict = None) -> bool:
     """Save diet plan for a specific cat. Returns True if successful, False otherwise."""
     if not STORAGE_AVAILABLE or not cat_id:
         print("Error: Storage not available or cat_id missing")
@@ -502,7 +590,11 @@ def save_diet(cat_id: int, diet_list: List[dict]) -> bool:
             return False
         # Preserve all other data when saving diet
         data["diet"] = diet_list
+        if meal_settings:
+            data["meal_settings"] = meal_settings
         print(f"Saving diet plan for cat {cat_id} with {len(diet_list)} items: {diet_list}")
+        if meal_settings:
+            print(f"Meal settings: {meal_settings}")
         success = storage_manager.write_json(data, f"data/cat_{cat_id}")
         if success:
             # Verify the write by reading it back
@@ -741,11 +833,15 @@ def home():
         tab = request.form.get("current_tab", "foods")
         if not name:
             return redirect(url_for("home", cat_id=cat_id, tab=tab) if cat_id else url_for("home", tab=tab))
+        food_type = request.form.get("food_type", "").strip()
+        if not food_type or food_type not in ["wet", "dry"]:
+            return redirect(url_for("home", cat_id=cat_id, tab=tab) if cat_id else url_for("home", tab=tab))
         kcal_per_kg = float(request.form.get("kcal_per_kg"))
         if kcal_per_kg <= 0:
             return redirect(url_for("home", cat_id=cat_id, tab=tab) if cat_id else url_for("home", tab=tab))
         food_data = {
             "name": name,
+            "food_type": food_type,
             "kcal_per_kg": round(kcal_per_kg, 1)
         }
         save_food(food_data)
@@ -778,7 +874,26 @@ def home():
                     })
             print(f"save_diet: Total percentage = {total}%, diet_list has {len(diet_list)} items")
             if total == 100:
-                success = save_diet(cat_id, diet_list)
+                # Get meal settings
+                selected_cat = get_cat(cat_id)
+                meals_per_day = selected_cat.get("meals_per_day", 3) if selected_cat else 3
+                meal_settings = {
+                    "meal_kcal": {},
+                    "meal_wet": {}
+                }
+                meal_kcal_total = 0
+                for meal_num in range(1, meals_per_day + 1):
+                    meal_kcal_str = request.form.get(f"meal_kcal_{meal_num}", "0") or "0"
+                    meal_kcal = int(float(meal_kcal_str))
+                    meal_settings["meal_kcal"][meal_num] = meal_kcal
+                    meal_kcal_total += meal_kcal
+                    
+                    meal_wet_str = request.form.get(f"meal_wet_{meal_num}", "50") or "50"
+                    meal_wet = int(float(meal_wet_str))
+                    meal_settings["meal_wet"][meal_num] = meal_wet
+                
+                print(f"save_diet: Meal kcal total = {meal_kcal_total}%, meal_settings = {meal_settings}")
+                success = save_diet(cat_id, diet_list, meal_settings)
                 if success:
                     print(f"Diet plan saved successfully for cat {cat_id}")
                 else:
@@ -874,8 +989,9 @@ def home():
             print(f"Error calculating trend: {e}")
 
     per_meal = pd.DataFrame()
+    meal_settings = selected_cat.get("meal_settings", {}) if selected_cat else {}
     if daily_kcal and not diet_df.empty and not foods_df.empty:
-        per_meal = kcal_split(daily_kcal, int(selected_cat.get("meals_per_day", 3)), diet_list, foods_list)
+        per_meal = kcal_split(daily_kcal, int(selected_cat.get("meals_per_day", 3)), diet_list, foods_list, meal_settings)
 
     # for diet form display - convert to integers for display
     diet_map = {int(r["food_id"]): int(round(float(r["pct_daily_kcal"]))) for _, r in diet_df.iterrows()} if not diet_df.empty else {}
@@ -912,6 +1028,7 @@ def home():
         foods=foods_list,
         diet_map=diet_map,
         grams_recommendations=grams_recommendations,
+        meal_settings=meal_settings,
         total_pct=int(round(sum(diet_map.values()))) if diet_map else 0,
         trend=trend,
         current_tab=current_tab

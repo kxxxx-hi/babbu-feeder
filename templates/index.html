@@ -245,6 +245,7 @@
             <thead class="table-light">
               <tr>
                 <th>Food</th>
+                <th>Type</th>
                 <th>% Daily kcal</th>
                 <th>kcal per Meal</th>
                 <th>Grams per Meal</th>
@@ -252,13 +253,28 @@
             </thead>
             <tbody>
             {% for r in per_meal %}
+              {% if r.meal_num == meal_num %}
               <tr>
                 <td><strong>{{ r.Food }}</strong></td>
+                <td>
+                  {% if r.food_type == 'wet' %}
+                    <span class="badge bg-info">Wet</span>
+                  {% elif r.food_type == 'dry' %}
+                    <span class="badge bg-secondary">Dry</span>
+                  {% else %}
+                    <span class="badge bg-warning">—</span>
+                  {% endif %}
+                </td>
                 <td class="kmono">{{ "%.1f"|format(r.pct) }}%</td>
                 <td class="kmono">{{ "%.1f"|format(r.kcal_meal) }} kcal</td>
                 <td class="kmono">{{ "%.1f"|format(r.grams_per_meal) if r.grams_per_meal is not none else "—" }} g</td>
               </tr>
+              {% endif %}
             {% endfor %}
+            {% set meal_items = per_meal|selectattr("meal_num", "equalto", meal_num)|list %}
+            {% if meal_items|length == 0 %}
+              <tr><td colspan="5" class="text-muted text-center">No foods for this meal</td></tr>
+            {% endif %}
             </tbody>
           </table>
         </div>
@@ -352,11 +368,19 @@
         <input type="hidden" name="action" value="add_food">
         <input type="hidden" name="cat_id" value="{{ cat_id }}">
         <input type="hidden" name="current_tab" value="foods">
-        <div class="col-md-4">
+        <div class="col-md-3">
           <label class="form-label">Food Name</label>
           <input name="food_name" class="form-control" required placeholder="e.g., Dry Cat Food">
         </div>
-        <div class="col-md-4">
+        <div class="col-md-3">
+          <label class="form-label">Food Type <span class="text-danger">*</span></label>
+          <select name="food_type" class="form-select" required>
+            <option value="">Select type...</option>
+            <option value="wet">Wet Food</option>
+            <option value="dry">Dry Food</option>
+          </select>
+        </div>
+        <div class="col-md-3">
           <label class="form-label">kcal per 1000 g</label>
           <input type="number" step="1" min="1" name="kcal_per_kg" class="form-control" required placeholder="e.g., 3800">
         </div>
@@ -369,19 +393,29 @@
       <h6>Food List</h6>
       <div class="table-responsive">
         <table class="table table-sm">
-          <thead>
-            <tr>
-              <th>ID</th>
-              <th>Food Name</th>
-              <th>kcal per 1000 g</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Food Name</th>
+                <th>Type</th>
+                <th>kcal per 1000 g</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
           {% for f in foods %}
             <tr>
               <td class="kmono">{{ f.id }}</td>
               <td><strong>{{ f.name }}</strong></td>
+              <td>
+                {% if f.food_type == 'wet' %}
+                  <span class="badge bg-info">Wet</span>
+                {% elif f.food_type == 'dry' %}
+                  <span class="badge bg-secondary">Dry</span>
+                {% else %}
+                  <span class="badge bg-warning">Not Set</span>
+                {% endif %}
+              </td>
               <td class="kmono">{{ "%.0f"|format(f.kcal_per_kg or 0) }} kcal</td>
               <td>
                 <form method="post" class="d-inline">
@@ -394,9 +428,9 @@
               </td>
             </tr>
           {% endfor %}
-          {% if foods|length == 0 %}
-            <tr><td colspan="4" class="text-muted">No foods added yet</td></tr>
-          {% endif %}
+            {% if foods|length == 0 %}
+              <tr><td colspan="5" class="text-muted">No foods added yet</td></tr>
+            {% endif %}
           </tbody>
         </table>
       </div>
@@ -404,8 +438,17 @@
 
     <!-- Diet Plan -->
     <div class="tab-pane fade" id="diet">
-      <h6>Create Diet Plan 🥘</h6>
-      <p class="text-muted mb-3">Set the percentage of daily calories for each food. Total must equal 100%.</p>
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <div>
+          <h6 class="mb-0">Create Diet Plan 🥘</h6>
+          <p class="text-muted mb-0 small">Set the percentage of daily calories for each food. Total must equal 100%.</p>
+        </div>
+        {% if total_pct == 100 %}
+        <button type="button" id="edit-diet-btn" class="btn btn-outline-secondary btn-sm" onclick="enableDietEdit()">
+          Edit Diet Plan
+        </button>
+        {% endif %}
+      </div>
       <form method="post">
         <input type="hidden" name="action" value="save_diet">
         <input type="hidden" name="cat_id" value="{{ cat_id }}">
@@ -415,6 +458,7 @@
             <thead>
               <tr>
                 <th>Food</th>
+                <th>Type</th>
                 <th style="max-width:200px;">Percentage of Daily kcal (%)</th>
                 <th>Recommended (g/day)</th>
               </tr>
@@ -423,6 +467,15 @@
             {% for f in foods %}
               <tr>
                 <td><strong>{{ f.name }}</strong></td>
+                <td>
+                  {% if f.food_type == 'wet' %}
+                    <span class="badge bg-info">Wet</span>
+                  {% elif f.food_type == 'dry' %}
+                    <span class="badge bg-secondary">Dry</span>
+                  {% else %}
+                    <span class="badge bg-warning">Not Set</span>
+                  {% endif %}
+                </td>
                 <td>
                   <input class="form-control form-control-sm diet-pct-input" type="number" step="1" min="0" max="100"
                          name="diet_pct_{{ f.id }}" value="{{ diet_map.get(f.id, 0)|int }}" 
@@ -439,7 +492,7 @@
               </tr>
             {% endfor %}
             {% if foods|length == 0 %}
-              <tr><td colspan="3" class="text-muted">Please add foods first before creating a diet plan</td></tr>
+              <tr><td colspan="4" class="text-muted">Please add foods first before creating a diet plan</td></tr>
             {% endif %}
             </tbody>
           </table>
@@ -475,9 +528,9 @@
                 </label>
                 <input type="number" class="form-control form-control-sm meal-kcal-input" 
                        name="meal_kcal_{{ meal_num }}" 
-                       value="{{ (100 / meals_per_day)|round|int }}" 
+                       value="{% if meal_settings and meal_settings.get('meal_kcal', {}).get(meal_num|string) %}{{ meal_settings.get('meal_kcal', {}).get(meal_num|string) }}{% else %}{{ (100 / meals_per_day)|round|int }}{% endif %}"
                        min="0" max="100" step="1" 
-                       {% if total_pct != 100 %}disabled{% endif %}
+                       {% if total_pct == 100 %}disabled{% endif %}
                        oninput="updateMealKcalTotal()">
                 <small class="text-muted">%</small>
               </div>
@@ -501,9 +554,9 @@
                 <div class="input-group input-group-sm">
                   <input type="number" class="form-control meal-wet-input" 
                          name="meal_wet_{{ meal_num }}" 
-                         value="50" 
+                         value="{% if meal_settings and meal_settings.get('meal_wet', {}).get(meal_num|string) %}{{ meal_settings.get('meal_wet', {}).get(meal_num|string) }}{% else %}50{% endif %}" 
                          min="0" max="100" step="5"
-                         {% if total_pct != 100 %}disabled{% endif %}>
+                         {% if total_pct == 100 %}disabled{% endif %}>
                   <span class="input-group-text">% wet</span>
                 </div>
                 <small class="text-muted d-block mt-1">
@@ -518,11 +571,6 @@
         
         <div class="mt-3">
           <button type="submit" id="save-diet-btn" class="btn btn-primary" {% if total_pct == 100 %}style="display: none;"{% endif %}>Save Diet Plan</button>
-          {% if total_pct == 100 %}
-          <button type="button" id="edit-diet-btn" class="btn btn-outline-secondary ms-2" onclick="enableDietEdit()">
-            Edit Diet Plan
-          </button>
-          {% endif %}
         </div>
         {% endif %}
       </form>
