@@ -743,28 +743,43 @@ def home():
         tab = request.form.get("current_tab", "foods")
         return redirect(url_for("home", cat_id=cat_id, tab=tab) if cat_id else url_for("home", tab=tab))
 
-    if action == "save_diet" and cat_id:
-        foods = get_foods()
-        total = 0
-        diet_list = []
-        for food in foods:
-            fid = food["id"]
-            pct_str = request.form.get(f"diet_pct_{fid}", "0") or "0"
-            pct = int(float(pct_str))  # Convert to integer
-            total += pct
-            if pct > 0:
-                diet_list.append({
-                    "food_id": fid,
-                    "pct_daily_kcal": float(pct)  # Store as float for consistency but value is integer
-                })
-        if total == 100:
-            success = save_diet(cat_id, diet_list)
-            if not success:
-                print(f"Warning: Diet save may have failed for cat {cat_id}")
-        else:
-            print(f"Error: Diet plan total is {total}%, must be exactly 100%")
-        tab = request.form.get("current_tab", "diet")
-        return redirect(url_for("home", cat_id=cat_id, tab=tab))
+    if action == "save_diet":
+        if not cat_id:
+            print(f"Error: save_diet action requires cat_id. Form data: {dict(request.form)}")
+            return redirect(url_for("home"))
+        try:
+            foods = get_foods()
+            total = 0
+            diet_list = []
+            print(f"save_diet: Processing diet plan for cat {cat_id}")
+            for food in foods:
+                fid = food["id"]
+                pct_str = request.form.get(f"diet_pct_{fid}", "0") or "0"
+                pct = int(float(pct_str))  # Convert to integer
+                total += pct
+                if pct > 0:
+                    diet_list.append({
+                        "food_id": fid,
+                        "pct_daily_kcal": float(pct)  # Store as float for consistency but value is integer
+                    })
+            print(f"save_diet: Total percentage = {total}%, diet_list has {len(diet_list)} items")
+            if total == 100:
+                success = save_diet(cat_id, diet_list)
+                if success:
+                    print(f"Diet plan saved successfully for cat {cat_id}")
+                else:
+                    print(f"Warning: Diet save may have failed for cat {cat_id}")
+            else:
+                print(f"Error: Diet plan total is {total}%, must be exactly 100%")
+            tab = request.form.get("current_tab", "diet")
+            print(f"Redirecting to home with cat_id={cat_id}, tab={tab}")
+            return redirect(url_for("home", cat_id=cat_id, tab=tab))
+        except Exception as e:
+            print(f"Error in save_diet: {e}")
+            import traceback
+            traceback.print_exc()
+            tab = request.form.get("current_tab", "diet")
+            return redirect(url_for("home", cat_id=cat_id, tab=tab))
 
     # Get selected cat data or use default
     selected_cat = None
