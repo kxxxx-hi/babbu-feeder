@@ -195,6 +195,7 @@
             <div class="stat-card">
               <div class="stat-label">Daily Target kcal</div>
               <div class="stat-value kmono">{{ "%.0f"|format(daily_kcal) if daily_kcal else "—" }} kcal</div>
+              <span id="daily-kcal-value" style="display: none;">{{ daily_kcal if daily_kcal else 0 }}</span>
             </div>
           </div>
           <div class="col-md-3">
@@ -399,6 +400,7 @@
               <tr>
                 <th>Food</th>
                 <th style="max-width:200px;">Percentage of Daily kcal (%)</th>
+                <th>Recommended (g/day)</th>
               </tr>
             </thead>
             <tbody>
@@ -406,13 +408,21 @@
               <tr>
                 <td><strong>{{ f.name }}</strong></td>
                 <td>
-                  <input class="form-control form-control-sm" type="number" step="1" min="0" max="100"
-                         name="diet_pct_{{ f.id }}" value="{{ diet_map.get(f.id, 0)|int }}" required>
+                  <input class="form-control form-control-sm diet-pct-input" type="number" step="1" min="0" max="100"
+                         name="diet_pct_{{ f.id }}" value="{{ diet_map.get(f.id, 0)|int }}" 
+                         data-food-id="{{ f.id }}" data-kcal-per-kg="{{ f.kcal_per_kg or 0 }}" required>
+                </td>
+                <td class="kmono grams-recommendation" data-food-id="{{ f.id }}">
+                  {% if grams_recommendations.get(f.id) %}
+                    {{ "%.1f"|format(grams_recommendations.get(f.id)) }} g
+                  {% else %}
+                    —
+                  {% endif %}
                 </td>
               </tr>
             {% endfor %}
             {% if foods|length == 0 %}
-              <tr><td colspan="2" class="text-muted">Please add foods first before creating a diet plan</td></tr>
+              <tr><td colspan="3" class="text-muted">Please add foods first before creating a diet plan</td></tr>
             {% endif %}
             </tbody>
           </table>
@@ -635,6 +645,49 @@ if (trend && trend.length > 0) {
   wChartEmpty.style.display = 'block';
   kChartEmpty.style.display = 'block';
 }
+
+// Diet plan grams calculation
+(function() {
+  const dailyKcalElement = document.getElementById('daily-kcal-value');
+  if (!dailyKcalElement) return;
+  const dailyKcal = parseFloat(dailyKcalElement.textContent) || 0;
+  if (!dailyKcal || dailyKcal <= 0) return;
+  
+  const dietInputs = document.querySelectorAll('.diet-pct-input');
+  
+  function calculateGrams(input) {
+    const pct = parseFloat(input.value) || 0;
+    const kcalPerKg = parseFloat(input.dataset.kcalPerKg) || 0;
+    const foodId = input.dataset.foodId;
+    
+    if (pct <= 0 || kcalPerKg <= 0) {
+      const gramsCell = document.querySelector('.grams-recommendation[data-food-id="' + foodId + '"]');
+      if (gramsCell) {
+        gramsCell.textContent = '—';
+      }
+      return;
+    }
+    
+    // Calculate: (daily_kcal * pct / 100) * 1000 / kcal_per_kg
+    const kcalForFood = dailyKcal * pct / 100.0;
+    const gramsPerDay = (kcalForFood * 1000.0) / kcalPerKg;
+    
+    const gramsCell = document.querySelector('.grams-recommendation[data-food-id="' + foodId + '"]');
+    if (gramsCell) {
+      gramsCell.textContent = gramsPerDay.toFixed(1) + ' g';
+    }
+  }
+  
+  // Calculate grams for all inputs on page load
+  dietInputs.forEach(function(input) {
+    calculateGrams(input);
+    
+    // Recalculate on input change
+    input.addEventListener('input', function() {
+      calculateGrams(this);
+    });
+  });
+})();
 </script>
 </body>
 </html>

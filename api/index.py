@@ -490,21 +490,36 @@ def get_diet(cat_id: int):
         print(f"Error reading diet: {e}")
         return []
 
-def save_diet(cat_id: int, diet_list: List[dict]):
-    """Save diet plan for a specific cat"""
+def save_diet(cat_id: int, diet_list: List[dict]) -> bool:
+    """Save diet plan for a specific cat. Returns True if successful, False otherwise."""
     if not STORAGE_AVAILABLE or not cat_id:
-        return
+        print("Error: Storage not available or cat_id missing")
+        return False
     try:
         data = get_cat(cat_id)
         if not data:
             print(f"Cat {cat_id} not found, cannot save diet")
-            return
+            return False
         data["diet"] = diet_list
-        storage_manager.write_json(data, f"data/cat_{cat_id}")
+        print(f"Saving diet plan for cat {cat_id} with {len(diet_list)} items")
+        success = storage_manager.write_json(data, f"data/cat_{cat_id}")
+        if success:
+            # Verify the write by reading it back
+            verify_data = get_cat(cat_id)
+            if verify_data and len(verify_data.get("diet", [])) == len(diet_list):
+                print(f"Successfully saved and verified diet plan for cat {cat_id}")
+                return True
+            else:
+                print(f"Warning: Diet save may have failed - verification read returned {len(verify_data.get('diet', [])) if verify_data else 0} items, expected {len(diet_list)}")
+                return False
+        else:
+            print(f"Error: Failed to save diet plan for cat {cat_id}")
+            return False
     except Exception as e:
         print(f"Error saving diet: {e}")
         import traceback
         traceback.print_exc()
+        return False
 
 def add_meal(cat_id: int, meal_date: str, meal_time: str, food_id: int, quantity: float):
     """Add a meal record for a specific cat"""
@@ -743,7 +758,11 @@ def home():
                     "pct_daily_kcal": float(pct)  # Store as float for consistency but value is integer
                 })
         if total == 100:
-            save_diet(cat_id, diet_list)
+            success = save_diet(cat_id, diet_list)
+            if not success:
+                print(f"Warning: Diet save may have failed for cat {cat_id}")
+        else:
+            print(f"Error: Diet plan total is {total}%, must be exactly 100%")
         tab = request.form.get("current_tab", "diet")
         return redirect(url_for("home", cat_id=cat_id, tab=tab))
 
@@ -831,6 +850,22 @@ def home():
 
     # for diet form display - convert to integers for display
     diet_map = {int(r["food_id"]): int(round(float(r["pct_daily_kcal"]))) for _, r in diet_df.iterrows()} if not diet_df.empty else {}
+    
+    # Calculate grams per day for each food in diet plan (for display recommendations)
+    # Create a map of food_id -> grams_per_day based on current percentages and daily_kcal
+    grams_recommendations = {}
+    if daily_kcal and foods_list:
+        foods_dict = {f["id"]: f for f in foods_list}
+        for food_id, pct in diet_map.items():
+            if pct > 0:
+                food = foods_dict.get(food_id)
+                if food:
+                    kcal_per_kg = calories_per_kg(food)
+                    if kcal_per_kg and kcal_per_kg > 0:
+                        # Calculate grams per day: (daily_kcal * pct / 100) * 1000 / kcal_per_kg
+                        kcal_for_food = daily_kcal * pct / 100.0
+                        grams_per_day = (kcal_for_food * 1000.0) / kcal_per_kg
+                        grams_recommendations[food_id] = round(grams_per_day, 1)
 
     return render_template(
         "index.html",
@@ -847,6 +882,7 @@ def home():
         per_meal=per_meal.to_dict(orient="records"),
         foods=foods_list,
         diet_map=diet_map,
+        grams_recommendations=grams_recommendations,
         total_pct=int(round(sum(diet_map.values()))) if diet_map else 0,
         trend=trend,
         current_tab=current_tab
