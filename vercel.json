@@ -16,6 +16,10 @@
     {
       "path": "/api/send-daily-email",
       "schedule": "0 23 * * *"
+    },
+    {
+      "path": "/api/send-daily-email-backup",
+      "schedule": "0 0 * * *"
     }
   ]
 }

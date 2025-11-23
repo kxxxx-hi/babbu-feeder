@@ -1522,6 +1522,56 @@ def send_daily_email():
             "results": results
         }), 500
 
+@app.route("/api/send-daily-email-backup", methods=["GET", "POST"])
+def send_daily_email_backup():
+    """Backup endpoint to send daily diet plan email at 8 AM Singapore time. Sends to y.kexin@icloud.com only."""
+    # Log the request for debugging
+    print(f"[CRON BACKUP] Daily email backup endpoint called at {datetime.now().isoformat()}")
+    print(f"[CRON BACKUP] Headers: {dict(request.headers)}")
+    print(f"[CRON BACKUP] Method: {request.method}")
+    
+    # Check if this is a Vercel cron job request
+    is_vercel_cron = request.headers.get("x-vercel-cron") == "1"
+    
+    # Backup sends only to y.kexin@icloud.com
+    recipient_email = "y.kexin@icloud.com"
+    
+    # Get cat ID from environment or default to 1 (Youtiao)
+    cat_id = int(os.getenv("DAILY_EMAIL_CAT_ID", "1"))
+    print(f"[CRON BACKUP] Sending email to {recipient_email} for cat {cat_id}")
+    
+    # Optional: Check for secret token to prevent unauthorized access (skip for Vercel cron)
+    if not is_vercel_cron:
+        secret_token = os.getenv("CRON_SECRET")
+        if secret_token:
+            provided_token = request.headers.get("Authorization") or request.args.get("token")
+            if provided_token != f"Bearer {secret_token}":
+                error_msg = "Unauthorized (missing or invalid token)"
+                print(f"[CRON BACKUP ERROR] {error_msg}")
+                return jsonify({"error": error_msg}), 401
+    else:
+        print("[CRON BACKUP] Request authenticated as Vercel cron job")
+    
+    # Send email
+    print(f"[CRON BACKUP] Attempting to send email to {recipient_email}")
+    error = generate_diet_plan_email(cat_id, recipient_email)
+    if error:
+        print(f"[CRON BACKUP ERROR] Failed to send to {recipient_email}: {error}")
+        return jsonify({
+            "success": False,
+            "email": recipient_email,
+            "status": "error",
+            "message": error
+        }), 500
+    else:
+        print(f"[CRON BACKUP SUCCESS] Email sent to {recipient_email}")
+        return jsonify({
+            "success": True,
+            "message": f"Backup email sent to {recipient_email} for cat {cat_id}",
+            "email": recipient_email,
+            "status": "success"
+        })
+
 @app.route("/api/cron-status", methods=["GET"])
 def cron_status():
     """Check cron job configuration and status."""
