@@ -572,7 +572,7 @@
                     <div class="input-group input-group-sm">
                       <input type="number" class="form-control meal-wet-input" 
                              name="meal_wet_{{ meal_num }}" 
-                             value="{% if meal_settings and meal_settings.get('meal_wet', {}).get(meal_num|string) %}{{ meal_settings.get('meal_wet', {}).get(meal_num|string) }}{% else %}50{% endif %}" 
+                             value="{% if meal_settings and meal_settings.get('meal_wet', {}) and meal_settings.get('meal_wet', {}).get(meal_num|string) is not none %}{{ meal_settings.get('meal_wet', {}).get(meal_num|string) }}{% else %}50{% endif %}" 
                              min="0" max="100" step="1"
                              {% if total_pct == 100 %}disabled{% endif %}>
                       <span class="input-group-text">% wet</span>
