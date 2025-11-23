@@ -1522,6 +1522,24 @@ def send_daily_email():
             "results": results
         }), 500
 
+@app.route("/api/cron-status", methods=["GET"])
+def cron_status():
+    """Check cron job configuration and status."""
+    status = {
+        "cron_configured": True,
+        "schedule": "0 23 * * * (11 PM UTC = 7 AM Singapore)",
+        "environment_variables": {
+            "DAILY_EMAIL_RECIPIENT": bool(os.getenv("DAILY_EMAIL_RECIPIENT")),
+            "DAILY_EMAIL_CAT_ID": bool(os.getenv("DAILY_EMAIL_CAT_ID")),
+            "SENDGRID_API_KEY": bool(os.getenv("SENDGRID_API_KEY")),
+            "SENDGRID_FROM_EMAIL": bool(os.getenv("SENDGRID_FROM_EMAIL")),
+        },
+        "recipient_emails": os.getenv("DAILY_EMAIL_RECIPIENT", "").split(",") if os.getenv("DAILY_EMAIL_RECIPIENT") else [],
+        "cat_id": int(os.getenv("DAILY_EMAIL_CAT_ID", "1")),
+        "note": "Check Vercel dashboard > Functions > Cron Jobs to see execution logs"
+    }
+    return jsonify(status)
+
 @app.route("/api/test-email", methods=["GET", "POST"])
 def test_email():
     """Test endpoint to send email to a specific address."""
