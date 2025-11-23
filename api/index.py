@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 # Email sending
 try:
     from sendgrid import SendGridAPIClient
-    from sendgrid.helpers.mail import Mail, Email
+    from sendgrid.helpers.mail import Mail
     SENDGRID_AVAILABLE = True
 except ImportError:
     SENDGRID_AVAILABLE = False
@@ -1397,8 +1397,8 @@ Meals Per Day: {meals_per_day}
         from_email = os.getenv("SENDGRID_FROM_EMAIL", "noreply@babbu-feeder.com")
         from_name = os.getenv("SENDGRID_FROM_NAME", "Cat Feeding Planner")
         
-        # Create from address with name
-        from_address = Email(from_email, from_name)
+        # Create from address with name (SendGrid accepts tuple: (email, name))
+        from_address = (from_email, from_name)
         
         message = Mail(
             from_email=from_address,
