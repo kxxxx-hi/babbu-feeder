@@ -34,8 +34,9 @@ Go to your Vercel project settings and add these environment variables:
    - Note: Must be verified in SendGrid
 
 3. **DAILY_EMAIL_RECIPIENT**
-   - Value: Your email address where you want to receive the daily diet plan
-   - Example: `your-email@gmail.com`
+   - Value: Email address(es) where you want to receive the daily diet plan
+   - For multiple recipients, use comma-separated list
+   - Example: `your-email@gmail.com` or `email1@gmail.com,email2@gmail.com`
 
 ### Optional Variables:
 

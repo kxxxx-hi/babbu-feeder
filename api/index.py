@@ -1343,6 +1343,14 @@ def generate_diet_plan_email(cat_id: int, recipient_email: str) -> Optional[str]
             html_content=html_content
         )
         
+        # Add BCC if multiple recipients are configured (for privacy)
+        bcc_emails_str = os.getenv("DAILY_EMAIL_BCC", "")
+        if bcc_emails_str and recipient_email not in bcc_emails_str:
+            bcc_emails = [email.strip() for email in bcc_emails_str.split(",") if email.strip()]
+            for bcc_email in bcc_emails:
+                if bcc_email != recipient_email:
+                    message.add_bcc(bcc_email)
+        
         sg = SendGridAPIClient(sendgrid_api_key)
         response = sg.send(message)
         
@@ -1361,10 +1369,15 @@ def generate_diet_plan_email(cat_id: int, recipient_email: str) -> Optional[str]
 @app.route("/api/send-daily-email", methods=["GET", "POST"])
 def send_daily_email():
     """Endpoint to send daily diet plan email. Can be called by Vercel Cron Jobs."""
-    # Get recipient email from environment or default
-    recipient_email = os.getenv("DAILY_EMAIL_RECIPIENT")
-    if not recipient_email:
+    # Get recipient emails from environment (comma-separated or single email)
+    recipient_emails_str = os.getenv("DAILY_EMAIL_RECIPIENT", "")
+    if not recipient_emails_str:
         return jsonify({"error": "DAILY_EMAIL_RECIPIENT not set"}), 500
+    
+    # Parse multiple recipients (comma-separated)
+    recipient_emails = [email.strip() for email in recipient_emails_str.split(",") if email.strip()]
+    if not recipient_emails:
+        return jsonify({"error": "No valid recipient emails"}), 500
     
     # Get cat ID from environment or default to 1 (Youtiao)
     cat_id = int(os.getenv("DAILY_EMAIL_CAT_ID", "1"))
@@ -1376,12 +1389,51 @@ def send_daily_email():
         if provided_token != f"Bearer {secret_token}":
             return jsonify({"error": "Unauthorized"}), 401
     
-    error = generate_diet_plan_email(cat_id, recipient_email)
+    # Send email to all recipients
+    results = []
+    for recipient_email in recipient_emails:
+        error = generate_diet_plan_email(cat_id, recipient_email)
+        if error:
+            results.append({"email": recipient_email, "status": "error", "message": error})
+        else:
+            results.append({"email": recipient_email, "status": "success"})
+    
+    # Check if all succeeded
+    all_success = all(r["status"] == "success" for r in results)
+    
+    if all_success:
+        return jsonify({
+            "success": True,
+            "message": f"Emails sent to {len(recipient_emails)} recipient(s) for cat {cat_id}",
+            "results": results
+        })
+    else:
+        return jsonify({
+            "success": False,
+            "message": "Some emails failed to send",
+            "results": results
+        }), 500
+
+@app.route("/api/test-email", methods=["GET", "POST"])
+def test_email():
+    """Test endpoint to send email to a specific address."""
+    # Get test recipient from query param or environment
+    test_email = request.args.get("to") or os.getenv("DAILY_EMAIL_RECIPIENT", "").split(",")[0].strip()
+    if not test_email:
+        return jsonify({"error": "No recipient email provided. Use ?to=your-email@example.com"}), 400
+    
+    # Get cat ID from query param or default
+    cat_id = int(request.args.get("cat_id", os.getenv("DAILY_EMAIL_CAT_ID", "1")))
+    
+    error = generate_diet_plan_email(cat_id, test_email)
     
     if error:
         return jsonify({"error": error}), 500
     
-    return jsonify({"success": True, "message": f"Email sent to {recipient_email} for cat {cat_id}"})
+    return jsonify({
+        "success": True,
+        "message": f"Test email sent to {test_email} for cat {cat_id}"
+    })
 
 # Simple test route
 @app.route("/test")
