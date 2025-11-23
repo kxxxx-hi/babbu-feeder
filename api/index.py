@@ -888,8 +888,13 @@ def home():
                     meal_settings["meal_kcal"][meal_num] = meal_kcal
                     meal_kcal_total += meal_kcal
                     
-                    meal_wet_str = request.form.get(f"meal_wet_{meal_num}", "50") or "50"
+                    meal_wet_str = request.form.get(f"meal_wet_{meal_num}")
+                    # Handle None, empty string, but allow "0" as valid value
+                    if meal_wet_str is None or meal_wet_str == "":
+                        meal_wet_str = "50"  # Default only if truly missing
                     meal_wet = int(float(meal_wet_str))
+                    # Ensure value is between 0 and 100
+                    meal_wet = max(0, min(100, meal_wet))
                     meal_settings["meal_wet"][meal_num] = meal_wet
                 
                 print(f"save_diet: Meal kcal total = {meal_kcal_total}%, meal_settings = {meal_settings}")
