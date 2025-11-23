@@ -444,7 +444,6 @@
           <p class="text-muted mb-0 small">Set the percentage of daily calories for each food. Total must equal 100%.</p>
         </div>
         <div>
-          <button type="submit" id="save-diet-btn" class="btn btn-primary btn-sm" {% if total_pct == 100 %}style="display: none;"{% endif %}>Save Diet Plan</button>
           {% if total_pct == 100 %}
           <button type="button" id="edit-diet-btn" class="btn btn-outline-secondary btn-sm" onclick="enableDietEdit()">
             Edit Diet Plan
