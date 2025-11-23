@@ -1015,6 +1015,26 @@ function updateMealKcalTotal() {
   // Calculate initial total on page load
   updateMealKcalTotal();
 })();
+
+// Toggle life stage edit mode
+function toggleLifeStageEdit() {
+  const display = document.getElementById('life-stage-display');
+  const edit = document.getElementById('life-stage-edit');
+  if (display && edit) {
+    if (display.style.display === 'none') {
+      display.style.display = 'inline';
+      edit.style.display = 'none';
+    } else {
+      display.style.display = 'none';
+      edit.style.display = 'inline';
+    }
+  }
+}
+
+function saveLifeStage(event) {
+  // Form will submit automatically, this is just for any additional handling if needed
+  return true;
+}
 </script>
 </body>
 </html>
