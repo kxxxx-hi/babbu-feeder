@@ -865,6 +865,16 @@ def home():
             return redirect(url_for("home", cat_id=new_cat_id))
         return redirect(url_for("home"))
 
+    if action == "update_life_stage" and cat_id:
+        # Update only life stage
+        cat_data = get_cat(cat_id)
+        if cat_data:
+            life_stage_override = request.form.get("life_stage_override") or None
+            cat_data["life_stage_override"] = life_stage_override
+            save_cat(cat_data)
+            return redirect(url_for("home", cat_id=cat_id))
+        return redirect(url_for("home", cat_id=cat_id))
+    
     if action == "update_profile" and cat_id:
         # Update cat profile
         cat_data = get_cat(cat_id)

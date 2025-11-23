@@ -191,7 +191,26 @@
         <div class="text-muted mb-3">
           <strong>Birthday:</strong> {{ selected_cat.birthday if selected_cat.birthday else "Not set" }} &nbsp;|&nbsp;
           <strong>Current Age:</strong> {{ age_display }} &nbsp;|&nbsp;
-          <strong>Life Stage:</strong> {{ stage_display }}
+          <strong>Life Stage:</strong> 
+          <span id="life-stage-display">{{ stage_display }}</span>
+          <button type="button" class="btn btn-sm btn-link p-0 ms-2" style="text-decoration: none; vertical-align: baseline;" onclick="toggleLifeStageEdit()" title="Edit life stage">
+            ✏️
+          </button>
+          <span id="life-stage-edit" style="display: none;" class="ms-2">
+            <form method="post" class="d-inline" onsubmit="return saveLifeStage(event)">
+              <input type="hidden" name="action" value="update_life_stage">
+              <input type="hidden" name="cat_id" value="{{ cat_id }}">
+              <select name="life_stage_override" class="form-select form-select-sm d-inline-block" style="width: auto;" onchange="this.form.submit()">
+                <option value="" {% if not selected_cat.life_stage_override %}selected{% endif %}>Auto (based on age)</option>
+                <option value="kitten_0_4m" {% if selected_cat.life_stage_override == 'kitten_0_4m' %}selected{% endif %}>Kitten 0-4 months</option>
+                <option value="kitten_4_12m" {% if selected_cat.life_stage_override == 'kitten_4_12m' %}selected{% endif %}>Kitten 4-12 months</option>
+                <option value="adult_neutered" {% if selected_cat.life_stage_override == 'adult_neutered' %}selected{% endif %}>Adult (Neutered)</option>
+                <option value="adult_intact" {% if selected_cat.life_stage_override == 'adult_intact' %}selected{% endif %}>Adult (Intact)</option>
+                <option value="adult_obese_prone" {% if selected_cat.life_stage_override == 'adult_obese_prone' %}selected{% endif %}>Adult (Obese-Prone)</option>
+              </select>
+              <button type="button" class="btn btn-sm btn-link p-0 ms-1" onclick="toggleLifeStageEdit()" title="Cancel">✕</button>
+            </form>
+          </span>
         </div>
         <div class="row g-3">
           <div class="col-md-3">
