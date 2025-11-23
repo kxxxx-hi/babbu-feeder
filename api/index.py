@@ -1173,6 +1173,216 @@ def purge_data():
     except Exception as e:
         return {"ok": False, "error": str(e)}, 500
 
+def generate_diet_plan_email(cat_id: int, recipient_email: str) -> Optional[str]:
+    """Generate and send daily diet plan email for a cat. Returns error message if failed, None if success."""
+    if not SENDGRID_AVAILABLE:
+        return "SendGrid not configured"
+    
+    sendgrid_api_key = os.getenv("SENDGRID_API_KEY")
+    if not sendgrid_api_key:
+        return "SENDGRID_API_KEY not set"
+    
+    try:
+        # Get cat data
+        cat_data = get_cat(cat_id)
+        if not cat_data:
+            return f"Cat {cat_id} not found"
+        
+        cat_name = cat_data.get("name", "Your cat")
+        
+        # Get all necessary data
+        weights_list = get_weights(cat_id)
+        foods_list = get_foods()
+        diet_list = get_diet(cat_id)
+        
+        if not diet_list:
+            return f"No diet plan found for {cat_name}"
+        
+        # Convert to DataFrames
+        weights_df = pd.DataFrame(weights_list) if weights_list else pd.DataFrame(columns=["dt", "weight_kg"])
+        foods_df = pd.DataFrame(foods_list) if foods_list else pd.DataFrame(columns=["id", "name", "food_type", "kcal_per_kg"])
+        diet_df = pd.DataFrame(diet_list) if diet_list else pd.DataFrame(columns=["food_id", "pct_daily_kcal"])
+        
+        # Calculate age and stage
+        birthday = cat_data.get("birthday")
+        age_weeks = 0.0
+        birthday_date = None
+        if birthday:
+            try:
+                birthday_date = date.fromisoformat(birthday)
+                age_weeks = weeks_between(birthday_date, date.today())
+            except Exception as e:
+                print(f"Error parsing birthday {birthday}: {e}")
+        
+        stage = (cat_data.get("life_stage_override") or "") or infer_life_stage(age_weeks)
+        stage_display = format_life_stage(stage)
+        
+        # Get latest weight
+        latest_w = None
+        if not weights_df.empty:
+            latest_w = float(weights_df.iloc[-1]["weight_kg"])
+        
+        # Calculate daily kcal
+        if latest_w:
+            daily_kcal = der_kcal(latest_w, stage)
+        elif age_weeks > 0:
+            estimated_weight = estimate_weight_by_age(age_weeks)
+            daily_kcal = der_kcal(estimated_weight, stage)
+        else:
+            daily_kcal = None
+        
+        if not daily_kcal:
+            return f"Cannot calculate daily kcal for {cat_name}"
+        
+        # Get meal settings
+        meal_settings = cat_data.get("meal_settings", {})
+        meals_per_day = int(cat_data.get("meals_per_day", 3))
+        
+        # Calculate per-meal plan
+        per_meal_df, meal_warnings = kcal_split(daily_kcal, meals_per_day, diet_list, foods_list, meal_settings)
+        per_meal = per_meal_df.to_dict(orient="records")
+        
+        if not per_meal:
+            return f"No meal plan available for {cat_name}"
+        
+        # Build email HTML
+        today = date.today().strftime("%B %d, %Y")
+        
+        html_content = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <style>
+                body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
+                .header {{ background: linear-gradient(135deg, #fff5f5 0%, #f8f9fa 100%); padding: 20px; border-radius: 8px; margin-bottom: 20px; }}
+                .meal-section {{ margin: 20px 0; padding: 15px; background: #f8f9fa; border-radius: 8px; }}
+                .meal-title {{ color: #e91e63; font-weight: 600; font-size: 1.1rem; margin-bottom: 10px; }}
+                table {{ width: 100%; border-collapse: collapse; margin-top: 10px; }}
+                th, td {{ padding: 8px; text-align: left; border-bottom: 1px solid #ddd; }}
+                th {{ background-color: #fff5f5; font-weight: 600; }}
+                .badge {{ padding: 3px 8px; border-radius: 4px; font-size: 0.85em; }}
+                .badge-wet {{ background-color: #0dcaf0; color: white; }}
+                .badge-dry {{ background-color: #6c757d; color: white; }}
+                .summary {{ background: #e7f3ff; padding: 15px; border-radius: 8px; margin-top: 20px; }}
+            </style>
+        </head>
+        <body>
+            <div class="header">
+                <h2>🐾 Daily Diet Plan for {cat_name}</h2>
+                <p><strong>Date:</strong> {today}</p>
+                <p><strong>Daily Target:</strong> {daily_kcal:.0f} kcal</p>
+                <p><strong>Life Stage:</strong> {stage_display}</p>
+                <p><strong>Meals Per Day:</strong> {meals_per_day}</p>
+            </div>
+        """
+        
+        # Group meals by meal number
+        meals_dict = {}
+        for item in per_meal:
+            meal_num = item.get("meal_num", 1)
+            if meal_num not in meals_dict:
+                meals_dict[meal_num] = []
+            meals_dict[meal_num].append(item)
+        
+        # Add meal sections
+        for meal_num in sorted(meals_dict.keys()):
+            meal_items = meals_dict[meal_num]
+            meal_total_kcal = sum(item.get("kcal_meal", 0) for item in meal_items)
+            
+            meal_label = f"{meal_num}{'st' if meal_num == 1 else 'nd' if meal_num == 2 else 'rd' if meal_num == 3 else 'th'} Meal"
+            
+            html_content += f"""
+            <div class="meal-section">
+                <div class="meal-title">{meal_label} ({meal_total_kcal:.0f} kcal)</div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Food</th>
+                            <th>Type</th>
+                            <th>Grams per Meal</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            """
+            
+            for item in meal_items:
+                food_name = item.get("Food", "")
+                food_type = item.get("food_type", "")
+                grams = item.get("grams_per_meal", 0)
+                
+                type_badge = f'<span class="badge badge-{food_type}">{food_type.title()}</span>' if food_type else ""
+                
+                html_content += f"""
+                        <tr>
+                            <td><strong>{food_name}</strong></td>
+                            <td>{type_badge}</td>
+                            <td>{grams:.1f} g</td>
+                        </tr>
+                """
+            
+            html_content += """
+                    </tbody>
+                </table>
+            </div>
+            """
+        
+        html_content += """
+            <div class="summary">
+                <p><strong>💡 Tip:</strong> Feed according to the meal plan above. Adjust portions if your cat's activity level or weight changes.</p>
+            </div>
+        </body>
+        </html>
+        """
+        
+        # Send email
+        from_email = os.getenv("SENDGRID_FROM_EMAIL", "noreply@babbu-feeder.com")
+        message = Mail(
+            from_email=from_email,
+            to_emails=recipient_email,
+            subject=f"🐾 Daily Diet Plan for {cat_name} - {today}",
+            html_content=html_content
+        )
+        
+        sg = SendGridAPIClient(sendgrid_api_key)
+        response = sg.send(message)
+        
+        if response.status_code in [200, 201, 202]:
+            print(f"Email sent successfully to {recipient_email} for cat {cat_id}")
+            return None
+        else:
+            return f"SendGrid API error: {response.status_code}"
+            
+    except Exception as e:
+        print(f"Error sending email: {e}")
+        import traceback
+        traceback.print_exc()
+        return str(e)
+
+@app.route("/api/send-daily-email", methods=["GET", "POST"])
+def send_daily_email():
+    """Endpoint to send daily diet plan email. Can be called by Vercel Cron Jobs."""
+    # Get recipient email from environment or default
+    recipient_email = os.getenv("DAILY_EMAIL_RECIPIENT")
+    if not recipient_email:
+        return jsonify({"error": "DAILY_EMAIL_RECIPIENT not set"}), 500
+    
+    # Get cat ID from environment or default to 1 (Youtiao)
+    cat_id = int(os.getenv("DAILY_EMAIL_CAT_ID", "1"))
+    
+    # Optional: Check for secret token to prevent unauthorized access
+    secret_token = os.getenv("CRON_SECRET")
+    if secret_token:
+        provided_token = request.headers.get("Authorization") or request.args.get("token")
+        if provided_token != f"Bearer {secret_token}":
+            return jsonify({"error": "Unauthorized"}), 401
+    
+    error = generate_diet_plan_email(cat_id, recipient_email)
+    
+    if error:
+        return jsonify({"error": error}), 500
+    
+    return jsonify({"success": True, "message": f"Email sent to {recipient_email} for cat {cat_id}"})
+
 # Simple test route
 @app.route("/test")
 def test():
