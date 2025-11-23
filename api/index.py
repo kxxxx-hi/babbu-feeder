@@ -1454,45 +1454,68 @@ Meals Per Day: {meals_per_day}
 @app.route("/api/send-daily-email", methods=["GET", "POST"])
 def send_daily_email():
     """Endpoint to send daily diet plan email. Can be called by Vercel Cron Jobs."""
+    # Log the request for debugging
+    print(f"[CRON] Daily email endpoint called at {datetime.now().isoformat()}")
+    print(f"[CRON] Headers: {dict(request.headers)}")
+    print(f"[CRON] Method: {request.method}")
+    
+    # Check if this is a Vercel cron job request
+    is_vercel_cron = request.headers.get("x-vercel-cron") == "1"
+    
     # Get recipient emails from environment (comma-separated or single email)
     recipient_emails_str = os.getenv("DAILY_EMAIL_RECIPIENT", "")
     if not recipient_emails_str:
-        return jsonify({"error": "DAILY_EMAIL_RECIPIENT not set"}), 500
+        error_msg = "DAILY_EMAIL_RECIPIENT not set"
+        print(f"[CRON ERROR] {error_msg}")
+        return jsonify({"error": error_msg}), 500
     
     # Parse multiple recipients (comma-separated)
     recipient_emails = [email.strip() for email in recipient_emails_str.split(",") if email.strip()]
     if not recipient_emails:
-        return jsonify({"error": "No valid recipient emails"}), 500
+        error_msg = "No valid recipient emails"
+        print(f"[CRON ERROR] {error_msg}")
+        return jsonify({"error": error_msg}), 500
     
     # Get cat ID from environment or default to 1 (Youtiao)
     cat_id = int(os.getenv("DAILY_EMAIL_CAT_ID", "1"))
+    print(f"[CRON] Sending emails to {len(recipient_emails)} recipient(s) for cat {cat_id}")
     
-    # Optional: Check for secret token to prevent unauthorized access
-    secret_token = os.getenv("CRON_SECRET")
-    if secret_token:
-        provided_token = request.headers.get("Authorization") or request.args.get("token")
-        if provided_token != f"Bearer {secret_token}":
-            return jsonify({"error": "Unauthorized"}), 401
+    # Optional: Check for secret token to prevent unauthorized access (skip for Vercel cron)
+    if not is_vercel_cron:
+        secret_token = os.getenv("CRON_SECRET")
+        if secret_token:
+            provided_token = request.headers.get("Authorization") or request.args.get("token")
+            if provided_token != f"Bearer {secret_token}":
+                error_msg = "Unauthorized (missing or invalid token)"
+                print(f"[CRON ERROR] {error_msg}")
+                return jsonify({"error": error_msg}), 401
+    else:
+        print("[CRON] Request authenticated as Vercel cron job")
     
     # Send email to all recipients
     results = []
     for recipient_email in recipient_emails:
+        print(f"[CRON] Attempting to send email to {recipient_email}")
         error = generate_diet_plan_email(cat_id, recipient_email)
         if error:
+            print(f"[CRON ERROR] Failed to send to {recipient_email}: {error}")
             results.append({"email": recipient_email, "status": "error", "message": error})
         else:
+            print(f"[CRON SUCCESS] Email sent to {recipient_email}")
             results.append({"email": recipient_email, "status": "success"})
     
     # Check if all succeeded
     all_success = all(r["status"] == "success" for r in results)
     
     if all_success:
+        print(f"[CRON] All emails sent successfully")
         return jsonify({
             "success": True,
             "message": f"Emails sent to {len(recipient_emails)} recipient(s) for cat {cat_id}",
             "results": results
         })
     else:
+        print(f"[CRON] Some emails failed to send")
         return jsonify({
             "success": False,
             "message": "Some emails failed to send",
