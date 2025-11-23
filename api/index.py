@@ -1621,12 +1621,44 @@ def email_status():
 def test():
     return "Flask is working!"
 
+# List available API endpoints
+@app.route("/api")
+def api_info():
+    """List available API endpoints."""
+    endpoints = {
+        "available_endpoints": [
+            "/api/send-daily-email - Send daily diet plan email (GET/POST)",
+            "/api/cron-status - Check cron job configuration (GET)",
+            "/api/test-email - Test email sending (GET/POST)",
+            "/api/email-status - Check email configuration (GET)"
+        ],
+        "note": "All endpoints return JSON responses"
+    }
+    return jsonify(endpoints)
+
 # Error handler for debugging - catch all exceptions
+@app.errorhandler(404)
+def handle_404(error):
+    """Handle 404 errors with helpful message."""
+    return jsonify({
+        "error": "Endpoint not found",
+        "available_endpoints": [
+            "/api/send-daily-email",
+            "/api/cron-status",
+            "/api/test-email",
+            "/api/email-status"
+        ],
+        "requested_path": request.path
+    }), 404
+
 @app.errorhandler(Exception)
 def handle_error(error):
     import traceback
     error_text = traceback.format_exc()
-    return f"<h1>Error Details</h1><pre>{error_text}</pre>", 500
+    return jsonify({
+        "error": "Internal server error",
+        "details": error_text
+    }), 500
 
 # Vercel requires variable "app"
 # already defined: app = Flask(__name__)
