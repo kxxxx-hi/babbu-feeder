@@ -218,13 +218,21 @@ def calories_per_kg(food: dict) -> Optional[float]:
     return None
 
 
-def kcal_split(total_kcal: float, meals_per_day: int, diet_list: List[dict], foods_list: List[dict], meal_settings: dict = None) -> pd.DataFrame:
-    """Calculate per-meal feeding plan. Returns DataFrame with meal_num, Food, pct, kcal_day, kcal_meal, grams_per_meal, food_type"""
+def kcal_split(total_kcal: float, meals_per_day: int, diet_list: List[dict], foods_list: List[dict], meal_settings: dict = None) -> tuple:
+    """Calculate per-meal feeding plan. Returns DataFrame with meal_num, Food, pct, kcal_day, kcal_meal, grams_per_meal, food_type
+    
+    This function distributes foods across meals to meet:
+    1. Each meal's target calories (from meal_kcal percentage)
+    2. Each meal's wet/dry proportion (from meal_wet percentage)
+    
+    If requirements cannot be met, foods are distributed proportionally with warnings.
+    """
     if total_kcal <= 0 or meals_per_day <= 0 or not diet_list or not foods_list:
-        return pd.DataFrame(columns=["meal_num", "Food", "pct", "kcal_day", "kcal_meal", "grams_per_meal", "food_type"])
+        return pd.DataFrame(columns=["meal_num", "Food", "pct", "kcal_day", "kcal_meal", "grams_per_meal", "food_type"]), []
     
     foods_dict = {f["id"]: f for f in foods_list}
     out = []
+    warnings = []  # Store warnings for impossible configurations
     
     # Get meal kcal percentages (default to equal distribution)
     meal_kcal_pcts = {}
@@ -248,91 +256,180 @@ def kcal_split(total_kcal: float, meals_per_day: int, diet_list: List[dict], foo
         for meal_num in range(1, meals_per_day + 1):
             meal_wet_pcts[meal_num] = 50.0
     
+    # First, analyze available foods
+    wet_foods = []
+    dry_foods = []
+    for diet_item in diet_list:
+        fid = int(diet_item["food_id"])
+        pct = float(diet_item["pct_daily_kcal"])
+        food = foods_dict.get(fid)
+        if not food:
+            continue
+        food_type = food.get("food_type", "")
+        if food_type == "wet":
+            wet_foods.append({"food": food, "pct": pct, "kcal_day": total_kcal * pct / 100.0})
+        elif food_type == "dry":
+            dry_foods.append({"food": food, "pct": pct, "kcal_day": total_kcal * pct / 100.0})
+    
+    total_wet_pct = sum(f["pct"] for f in wet_foods)
+    total_dry_pct = sum(f["pct"] for f in dry_foods)
+    total_wet_kcal = sum(f["kcal_day"] for f in wet_foods)
+    total_dry_kcal = sum(f["kcal_day"] for f in dry_foods)
+    
     # Calculate per meal for each meal
     for meal_num in range(1, meals_per_day + 1):
         meal_kcal_pct = meal_kcal_pcts.get(meal_num, 100.0 / meals_per_day)
         meal_wet_pct = meal_wet_pcts.get(meal_num, 50.0)
         meal_dry_pct = 100.0 - meal_wet_pct
         
-        # Total kcal for this meal
-        meal_total_kcal = total_kcal * meal_kcal_pct / 100.0
+        # Target kcal for this meal
+        meal_target_kcal = total_kcal * meal_kcal_pct / 100.0
         
-        # Split foods by type
-        wet_foods = []
-        dry_foods = []
-        for diet_item in diet_list:
-            fid = int(diet_item["food_id"])
-            pct = float(diet_item["pct_daily_kcal"])
-            food = foods_dict.get(fid)
-            if not food:
-                continue
-            food_type = food.get("food_type", "")
-            if food_type == "wet":
-                wet_foods.append({"food": food, "pct": pct})
-            elif food_type == "dry":
-                dry_foods.append({"food": food, "pct": pct})
+        # Target wet and dry kcal for this meal
+        meal_target_wet_kcal = meal_target_kcal * meal_wet_pct / 100.0
+        meal_target_dry_kcal = meal_target_kcal * meal_dry_pct / 100.0
         
-        # Calculate total pct for wet and dry
-        total_wet_pct = sum(f["pct"] for f in wet_foods)
-        total_dry_pct = sum(f["pct"] for f in dry_foods)
+        # Calculate what's possible for this meal
+        # We need to distribute the daily food amounts across meals
+        # The constraint is: sum of all meals for each food = daily amount
         
-        # Distribute meal calories between wet and dry based on proportions
-        meal_wet_kcal = meal_total_kcal * meal_wet_pct / 100.0 if total_wet_pct > 0 else 0
-        meal_dry_kcal = meal_total_kcal * meal_dry_pct / 100.0 if total_dry_pct > 0 else 0
+        # For now, use a proportional distribution approach
+        # Calculate how much of each food type we can allocate to this meal
+        # based on the meal's target proportions
         
-        # Add wet foods
-        for item in wet_foods:
-            food = item["food"]
-            pct = item["pct"]
-            kcal_per_kg = calories_per_kg(food)
-            if not kcal_per_kg or kcal_per_kg <= 0:
-                continue
+        # Calculate minimum and maximum possible wet percentage for this meal
+        # Minimum: if we put all dry foods in other meals (if possible)
+        # Maximum: if we put all wet foods in this meal (if possible)
+        
+        # Simple approach: distribute foods proportionally to meet meal requirements
+        # If we can't meet exact requirements, distribute proportionally and warn
+        
+        # Calculate available wet/dry kcal for this meal
+        # We'll distribute daily amounts across meals based on meal_kcal percentages
+        # Then adjust to meet wet/dry requirements
+        
+        # Distribute foods to meet both calorie and wet/dry requirements
+        # Strategy: Allocate foods proportionally, then adjust to meet wet/dry target
+        
+        # Calculate how much wet and dry we need for this meal
+        meal_target_wet_kcal = meal_target_kcal * meal_wet_pct / 100.0
+        meal_target_dry_kcal = meal_target_kcal * meal_dry_pct / 100.0
+        
+        # Distribute wet foods to meet target wet kcal
+        if total_wet_kcal > 0 and meal_target_wet_kcal > 0:
+            for item in wet_foods:
+                food = item["food"]
+                kcal_day = item["kcal_day"]
+                
+                # Calculate proportion of wet foods this meal should get
+                # Based on: meal_target_wet_kcal / total_wet_kcal
+                wet_proportion = meal_target_wet_kcal / total_wet_kcal
+                food_meal_kcal = kcal_day * wet_proportion
+                
+                kcal_per_kg = calories_per_kg(food)
+                if not kcal_per_kg or kcal_per_kg <= 0:
+                    continue
+                
+                grams_pm = (food_meal_kcal * 1000.0) / kcal_per_kg if food_meal_kcal > 0 else 0
+                
+                out.append({
+                    "meal_num": meal_num,
+                    "Food": food["name"],
+                    "pct": item["pct"],
+                    "kcal_day": kcal_day,
+                    "kcal_meal": round(food_meal_kcal, 1),
+                    "grams_per_meal": round(grams_pm, 1),
+                    "food_type": "wet"
+                })
+        
+        # Distribute dry foods to meet target dry kcal
+        if total_dry_kcal > 0 and meal_target_dry_kcal > 0:
+            for item in dry_foods:
+                food = item["food"]
+                kcal_day = item["kcal_day"]
+                
+                # Calculate proportion of dry foods this meal should get
+                # Based on: meal_target_dry_kcal / total_dry_kcal
+                dry_proportion = meal_target_dry_kcal / total_dry_kcal
+                food_meal_kcal = kcal_day * dry_proportion
+                
+                kcal_per_kg = calories_per_kg(food)
+                if not kcal_per_kg or kcal_per_kg <= 0:
+                    continue
+                
+                grams_pm = (food_meal_kcal * 1000.0) / kcal_per_kg if food_meal_kcal > 0 else 0
+                
+                out.append({
+                    "meal_num": meal_num,
+                    "Food": food["name"],
+                    "pct": item["pct"],
+                    "kcal_day": kcal_day,
+                    "kcal_meal": round(food_meal_kcal, 1),
+                    "grams_per_meal": round(grams_pm, 1),
+                    "food_type": "dry"
+                })
+    
+    # Calculate warnings for each meal
+    warnings = []
+    for meal_num in range(1, meals_per_day + 1):
+        meal_kcal_pct = meal_kcal_pcts.get(meal_num, 100.0 / meals_per_day)
+        meal_wet_pct = meal_wet_pcts.get(meal_num, 50.0)
+        
+        # Calculate what's actually possible for this meal
+        # Minimum wet %: if we put minimum wet foods in this meal
+        # Maximum wet %: if we put maximum wet foods in this meal
+        
+        # Calculate min/max based on available foods and meal calorie percentage
+        meal_kcal = total_kcal * meal_kcal_pct / 100.0
+        
+        # Minimum wet: put as much dry as possible in this meal
+        # Maximum wet: put as much wet as possible in this meal
+        # But we need to consider that foods are distributed across all meals
+        
+        # Simple check: if meal wants more wet than available, or more dry than available
+        if total_wet_kcal > 0 and total_dry_kcal > 0:
+            # Calculate min/max wet percentage possible for this meal
+            # This is a simplified calculation - in reality it depends on distribution across all meals
+            min_wet_pct = max(0, ((meal_kcal - total_dry_kcal) / meal_kcal * 100.0) if meal_kcal > 0 else 0)
+            max_wet_pct = min(100, (total_wet_kcal / meal_kcal * 100.0) if meal_kcal > 0 else 100)
             
-            # Calculate kcal for this food in this meal
-            if total_wet_pct > 0:
-                food_meal_kcal = meal_wet_kcal * (pct / total_wet_pct)
-            else:
-                food_meal_kcal = 0
+            min_wet_pct = max(0, min(100, min_wet_pct))
+            max_wet_pct = max(0, min(100, max_wet_pct))
             
-            grams_pm = (food_meal_kcal * 1000.0) / kcal_per_kg if food_meal_kcal > 0 else 0
-            
-            out.append({
+            if meal_wet_pct < min_wet_pct - 1.0:
+                warnings.append({
+                    "meal_num": meal_num,
+                    "type": "wet_too_low",
+                    "message": f"Meal {meal_num}: Wet food % ({meal_wet_pct:.0f}%) is too low. Minimum possible: {min_wet_pct:.0f}%",
+                    "min_wet": round(min_wet_pct),
+                    "max_wet": round(max_wet_pct)
+                })
+            elif meal_wet_pct > max_wet_pct + 1.0:
+                warnings.append({
+                    "meal_num": meal_num,
+                    "type": "wet_too_high",
+                    "message": f"Meal {meal_num}: Wet food % ({meal_wet_pct:.0f}%) is too high. Maximum possible: {max_wet_pct:.0f}%",
+                    "min_wet": round(min_wet_pct),
+                    "max_wet": round(max_wet_pct)
+                })
+        elif total_wet_kcal == 0 and meal_wet_pct > 0:
+            warnings.append({
                 "meal_num": meal_num,
-                "Food": food["name"],
-                "pct": pct,
-                "kcal_day": total_kcal * pct / 100.0,
-                "kcal_meal": round(food_meal_kcal, 1),
-                "grams_per_meal": round(grams_pm, 1),
-                "food_type": "wet"
+                "type": "no_wet_food",
+                "message": f"Meal {meal_num}: No wet foods in diet plan, but {meal_wet_pct:.0f}% wet requested.",
+                "min_wet": 0,
+                "max_wet": 0
             })
-        
-        # Add dry foods
-        for item in dry_foods:
-            food = item["food"]
-            pct = item["pct"]
-            kcal_per_kg = calories_per_kg(food)
-            if not kcal_per_kg or kcal_per_kg <= 0:
-                continue
-            
-            # Calculate kcal for this food in this meal
-            if total_dry_pct > 0:
-                food_meal_kcal = meal_dry_kcal * (pct / total_dry_pct)
-            else:
-                food_meal_kcal = 0
-            
-            grams_pm = (food_meal_kcal * 1000.0) / kcal_per_kg if food_meal_kcal > 0 else 0
-            
-            out.append({
+        elif total_dry_kcal == 0 and meal_wet_pct < 100:
+            warnings.append({
                 "meal_num": meal_num,
-                "Food": food["name"],
-                "pct": pct,
-                "kcal_day": total_kcal * pct / 100.0,
-                "kcal_meal": round(food_meal_kcal, 1),
-                "grams_per_meal": round(grams_pm, 1),
-                "food_type": "dry"
+                "type": "no_dry_food",
+                "message": f"Meal {meal_num}: No dry foods in diet plan, but {100 - meal_wet_pct:.0f}% dry requested.",
+                "min_wet": 100,
+                "max_wet": 100
             })
     
-    return pd.DataFrame(out)
+    return pd.DataFrame(out), warnings
 
 # ---------- Vercel Blob Data helpers - Multiple Cats Support ----------
 # Storage structure (organized in data/ directory):
@@ -995,8 +1092,9 @@ def home():
 
     per_meal = pd.DataFrame()
     meal_settings = selected_cat.get("meal_settings", {}) if selected_cat else {}
+    meal_warnings = []
     if daily_kcal and not diet_df.empty and not foods_df.empty:
-        per_meal = kcal_split(daily_kcal, int(selected_cat.get("meals_per_day", 3)), diet_list, foods_list, meal_settings)
+        per_meal, meal_warnings = kcal_split(daily_kcal, int(selected_cat.get("meals_per_day", 3)), diet_list, foods_list, meal_settings)
 
     # for diet form display - convert to integers for display
     diet_map = {int(r["food_id"]): int(round(float(r["pct_daily_kcal"]))) for _, r in diet_df.iterrows()} if not diet_df.empty else {}
