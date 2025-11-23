@@ -5,8 +5,17 @@ from typing import Optional, Tuple, List
 
 import pandas as pd
 import requests
-from flask import Flask, render_template, request, redirect, url_for
+from flask import Flask, render_template, request, redirect, url_for, jsonify
 from dotenv import load_dotenv
+
+# Email sending
+try:
+    from sendgrid import SendGridAPIClient
+    from sendgrid.helpers.mail import Mail
+    SENDGRID_AVAILABLE = True
+except ImportError:
+    SENDGRID_AVAILABLE = False
+    print("Warning: SendGrid not available. Email functionality disabled.")
 
 # Load environment variables
 load_dotenv()
