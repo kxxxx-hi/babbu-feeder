@@ -1417,10 +1417,36 @@ def send_daily_email():
 @app.route("/api/test-email", methods=["GET", "POST"])
 def test_email():
     """Test endpoint to send email to a specific address."""
+    # Check if SendGrid is configured
+    if not SENDGRID_AVAILABLE:
+        return jsonify({
+            "error": "SendGrid library not installed",
+            "setup_required": "Install sendgrid: pip install sendgrid"
+        }), 500
+    
+    sendgrid_api_key = os.getenv("SENDGRID_API_KEY")
+    if not sendgrid_api_key:
+        return jsonify({
+            "error": "SENDGRID_API_KEY not set",
+            "setup_required": "Add SENDGRID_API_KEY environment variable in Vercel",
+            "instructions": "1. Sign up at https://sendgrid.com\n2. Create API Key in Settings > API Keys\n3. Add it as SENDGRID_API_KEY in Vercel Environment Variables"
+        }), 500
+    
+    sendgrid_from_email = os.getenv("SENDGRID_FROM_EMAIL")
+    if not sendgrid_from_email:
+        return jsonify({
+            "error": "SENDGRID_FROM_EMAIL not set",
+            "setup_required": "Add SENDGRID_FROM_EMAIL environment variable in Vercel",
+            "instructions": "Use a verified sender email address from your SendGrid account"
+        }), 500
+    
     # Get test recipient from query param or environment
     test_email = request.args.get("to") or os.getenv("DAILY_EMAIL_RECIPIENT", "").split(",")[0].strip()
     if not test_email:
-        return jsonify({"error": "No recipient email provided. Use ?to=your-email@example.com"}), 400
+        return jsonify({
+            "error": "No recipient email provided",
+            "usage": "Use ?to=your-email@example.com&cat_id=1"
+        }), 400
     
     # Get cat ID from query param or default
     cat_id = int(request.args.get("cat_id", os.getenv("DAILY_EMAIL_CAT_ID", "1")))
@@ -1432,8 +1458,37 @@ def test_email():
     
     return jsonify({
         "success": True,
-        "message": f"Test email sent to {test_email} for cat {cat_id}"
+        "message": f"Test email sent to {test_email} for cat {cat_id}",
+        "note": "Check your inbox (and spam folder) for the email"
     })
+
+@app.route("/api/email-status", methods=["GET"])
+def email_status():
+    """Check email configuration status."""
+    status = {
+        "sendgrid_available": SENDGRID_AVAILABLE,
+        "sendgrid_api_key_set": bool(os.getenv("SENDGRID_API_KEY")),
+        "sendgrid_from_email_set": bool(os.getenv("SENDGRID_FROM_EMAIL")),
+        "daily_email_recipient_set": bool(os.getenv("DAILY_EMAIL_RECIPIENT")),
+        "daily_email_cat_id": os.getenv("DAILY_EMAIL_CAT_ID", "1"),
+    }
+    
+    if status["sendgrid_api_key_set"]:
+        status["sendgrid_api_key_preview"] = os.getenv("SENDGRID_API_KEY", "")[:10] + "..."
+    
+    if status["daily_email_recipient_set"]:
+        recipients = os.getenv("DAILY_EMAIL_RECIPIENT", "").split(",")
+        status["recipient_count"] = len([r.strip() for r in recipients if r.strip()])
+        status["recipients"] = [r.strip() for r in recipients if r.strip()]
+    
+    status["configured"] = all([
+        status["sendgrid_available"],
+        status["sendgrid_api_key_set"],
+        status["sendgrid_from_email_set"],
+        status["daily_email_recipient_set"]
+    ])
+    
+    return jsonify(status)
 
 # Simple test route
 @app.route("/test")
