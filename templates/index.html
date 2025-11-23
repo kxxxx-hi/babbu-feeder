@@ -236,9 +236,14 @@
       {% else %}
       {% set meals_per_day = selected_cat.meals_per_day|default(3)|int %}
       {% for meal_num in range(1, meals_per_day + 1) %}
+      {% set meal_items = per_meal|selectattr("meal_num", "equalto", meal_num)|list %}
+      {% set meal_total_kcal = meal_items|sum(attribute='kcal_meal') %}
       <div class="mb-4">
         <h6 class="mb-2" style="color: #e91e63; font-size: 1rem; font-weight: 600;">
           {% if meal_num == 1 %}1st{% elif meal_num == 2 %}2nd{% elif meal_num == 3 %}3rd{% else %}{{ meal_num }}th{% endif %} Meal
+          {% if meal_total_kcal > 0 %}
+          <span class="text-muted" style="font-weight: normal;">({{ "%.0f"|format(meal_total_kcal) }} kcal)</span>
+          {% endif %}
         </h6>
         <div class="table-responsive">
           <table class="table table-sm table-bordered">
@@ -246,14 +251,13 @@
               <tr>
                 <th>Food</th>
                 <th>Type</th>
-                <th>% Daily kcal</th>
-                <th>kcal per Meal</th>
                 <th>Grams per Meal</th>
               </tr>
             </thead>
             <tbody>
-            {% for r in per_meal %}
-              {% if r.meal_num == meal_num %}
+            {% set meal_items = per_meal|selectattr("meal_num", "equalto", meal_num)|list %}
+            {% set meal_total_kcal = meal_items|sum(attribute='kcal_meal') %}
+            {% for r in meal_items %}
               <tr>
                 <td><strong>{{ r.Food }}</strong></td>
                 <td>
@@ -265,15 +269,11 @@
                     <span class="badge bg-warning">—</span>
                   {% endif %}
                 </td>
-                <td class="kmono">{{ "%.1f"|format(r.pct) }}%</td>
-                <td class="kmono">{{ "%.1f"|format(r.kcal_meal) }} kcal</td>
                 <td class="kmono">{{ "%.1f"|format(r.grams_per_meal) if r.grams_per_meal is not none else "—" }} g</td>
               </tr>
-              {% endif %}
             {% endfor %}
-            {% set meal_items = per_meal|selectattr("meal_num", "equalto", meal_num)|list %}
             {% if meal_items|length == 0 %}
-              <tr><td colspan="5" class="text-muted text-center">No foods for this meal</td></tr>
+              <tr><td colspan="3" class="text-muted text-center">No foods for this meal</td></tr>
             {% endif %}
             </tbody>
           </table>
@@ -453,125 +453,141 @@
         <input type="hidden" name="action" value="save_diet">
         <input type="hidden" name="cat_id" value="{{ cat_id }}">
         <input type="hidden" name="current_tab" value="diet">
-        <div class="table-responsive">
-          <table class="table table-sm">
-            <thead>
-              <tr>
-                <th>Food</th>
-                <th>Type</th>
-                <th style="max-width:200px;">Percentage of Daily kcal (%)</th>
-                <th>Recommended (g/day)</th>
-              </tr>
-            </thead>
-            <tbody>
-            {% for f in foods %}
-              <tr>
-                <td><strong>{{ f.name }}</strong></td>
-                <td>
-                  {% if f.food_type == 'wet' %}
-                    <span class="badge bg-info">Wet</span>
-                  {% elif f.food_type == 'dry' %}
-                    <span class="badge bg-secondary">Dry</span>
-                  {% else %}
-                    <span class="badge bg-warning">Not Set</span>
-                  {% endif %}
-                </td>
-                <td>
-                  <input class="form-control form-control-sm diet-pct-input" type="number" step="1" min="0" max="100"
-                         name="diet_pct_{{ f.id }}" value="{{ diet_map.get(f.id, 0)|int }}" 
-                         data-food-id="{{ f.id }}" data-kcal-per-kg="{{ f.kcal_per_kg or 0 }}" 
-                         {% if total_pct == 100 %}disabled{% endif %} required>
-                </td>
-                <td class="kmono grams-recommendation" data-food-id="{{ f.id }}">
-                  {% if grams_recommendations.get(f.id) %}
-                    {{ "%.1f"|format(grams_recommendations.get(f.id)) }} g
-                  {% else %}
-                    —
-                  {% endif %}
-                </td>
-              </tr>
-            {% endfor %}
-            {% if foods|length == 0 %}
-              <tr><td colspan="4" class="text-muted">Please add foods first before creating a diet plan</td></tr>
-            {% endif %}
-            </tbody>
-          </table>
-        </div>
         {% if foods|length > 0 %}
-        <div class="mt-4">
-          <p>Total: <strong class="kmono" id="diet-total-pct" style="font-size: 1.1rem;">{{ total_pct|int }}%</strong> 
-          <span id="diet-total-status">
-            {% if total_pct != 100 %}
-              <span class="text-danger">(must be exactly 100%)</span>
-            {% else %}
-              <span class="text-success">✓</span>
-            {% endif %}
-          </span>
-          </p>
-        </div>
-        
-        <!-- Meal-Level Controls -->
-        {% set meals_per_day = selected_cat.meals_per_day|default(3)|int %}
-        {% if total_pct == 100 %}
-        <div class="mt-4 p-3" style="background: #fff5f5; border-radius: 8px; border: 1px solid #ffe0e0;">
-          <h6 class="mb-3" style="color: #e91e63;">Meal Settings 🍽️</h6>
-          
-          <!-- Calories per Meal -->
-          <div class="mb-4">
-            <label class="form-label mb-2"><strong>Calories per Meal (%)</strong></label>
-            <p class="text-muted small mb-2">Distribute daily calories across meals. Total must equal 100%.</p>
-            <div class="row g-2">
-              {% for meal_num in range(1, meals_per_day + 1) %}
-              <div class="col-md-3">
-                <label class="form-label small">
-                  {% if meal_num == 1 %}1st{% elif meal_num == 2 %}2nd{% elif meal_num == 3 %}3rd{% else %}{{ meal_num }}th{% endif %} Meal
-                </label>
-                <input type="number" class="form-control form-control-sm meal-kcal-input" 
-                       name="meal_kcal_{{ meal_num }}" 
-                       value="{% if meal_settings and meal_settings.get('meal_kcal', {}).get(meal_num|string) %}{{ meal_settings.get('meal_kcal', {}).get(meal_num|string) }}{% else %}{{ (100 / meals_per_day)|round|int }}{% endif %}"
-                       min="0" max="100" step="1" 
-                       {% if total_pct == 100 %}disabled{% endif %}
-                       oninput="updateMealKcalTotal()">
-                <small class="text-muted">%</small>
+        <div class="row g-3">
+          <!-- Food Settings Column -->
+          <div class="col-md-6">
+            <div class="p-3" style="background: #fff5f5; border-radius: 8px; border: 1px solid #ffe0e0;">
+              <h6 class="mb-3" style="color: #e91e63;">Food Settings 🍖</h6>
+              <div class="table-responsive">
+                <table class="table table-sm mb-0">
+                  <thead>
+                    <tr>
+                      <th>Food</th>
+                      <th>Type</th>
+                      <th style="max-width:100px;">% Daily kcal</th>
+                      <th>g/day</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                  {% for f in foods %}
+                    <tr>
+                      <td><strong>{{ f.name }}</strong></td>
+                      <td>
+                        {% if f.food_type == 'wet' %}
+                          <span class="badge bg-info">Wet</span>
+                        {% elif f.food_type == 'dry' %}
+                          <span class="badge bg-secondary">Dry</span>
+                        {% else %}
+                          <span class="badge bg-warning">Not Set</span>
+                        {% endif %}
+                      </td>
+                      <td>
+                        <input class="form-control form-control-sm diet-pct-input" type="number" step="1" min="0" max="100"
+                               name="diet_pct_{{ f.id }}" value="{{ diet_map.get(f.id, 0)|int }}" 
+                               data-food-id="{{ f.id }}" data-kcal-per-kg="{{ f.kcal_per_kg or 0 }}" 
+                               {% if total_pct == 100 %}disabled{% endif %} required>
+                      </td>
+                      <td class="kmono grams-recommendation small" data-food-id="{{ f.id }}">
+                        {% if grams_recommendations.get(f.id) %}
+                          {{ "%.1f"|format(grams_recommendations.get(f.id)) }} g
+                        {% else %}
+                          —
+                        {% endif %}
+                      </td>
+                    </tr>
+                  {% endfor %}
+                  </tbody>
+                </table>
               </div>
-              {% endfor %}
+              <div class="mt-3">
+                <p class="mb-0">Total: <strong class="kmono" id="diet-total-pct" style="font-size: 1.1rem;">{{ total_pct|int }}%</strong> 
+                <span id="diet-total-status">
+                  {% if total_pct != 100 %}
+                    <span class="text-danger">(must be exactly 100%)</span>
+                  {% else %}
+                    <span class="text-success">✓</span>
+                  {% endif %}
+                </span>
+                </p>
+              </div>
             </div>
-            <p class="mt-2 mb-0">
-              <small>Meal Calories Total: <strong class="kmono" id="meal-kcal-total">{{ meals_per_day * (100 / meals_per_day)|round|int }}%</strong></small>
-            </p>
           </div>
           
-          <!-- Wet/Dry Food Proportion per Meal -->
-          <div class="mb-3">
-            <label class="form-label mb-2"><strong>Wet vs Dry Food per Meal</strong></label>
-            <p class="text-muted small mb-2">Set the proportion of wet food for each meal. Remaining is dry food.</p>
-            <div class="row g-2">
-              {% for meal_num in range(1, meals_per_day + 1) %}
-              <div class="col-md-3">
-                <label class="form-label small">
-                  {% if meal_num == 1 %}1st{% elif meal_num == 2 %}2nd{% elif meal_num == 3 %}3rd{% else %}{{ meal_num }}th{% endif %} Meal
-                </label>
-                <div class="input-group input-group-sm">
-                  <input type="number" class="form-control meal-wet-input" 
-                         name="meal_wet_{{ meal_num }}" 
-                         value="{% if meal_settings and meal_settings.get('meal_wet', {}).get(meal_num|string) %}{{ meal_settings.get('meal_wet', {}).get(meal_num|string) }}{% else %}50{% endif %}" 
-                         min="0" max="100" step="5"
-                         {% if total_pct == 100 %}disabled{% endif %}>
-                  <span class="input-group-text">% wet</span>
+          <!-- Meal Settings Column -->
+          {% set meals_per_day = selected_cat.meals_per_day|default(3)|int %}
+          {% if total_pct == 100 %}
+          <div class="col-md-6">
+            <div class="p-3" style="background: #fff5f5; border-radius: 8px; border: 1px solid #ffe0e0;">
+              <h6 class="mb-3" style="color: #e91e63;">Meal Settings 🍽️</h6>
+              
+              <!-- Calories per Meal -->
+              <div class="mb-4">
+                <label class="form-label mb-2"><strong>Calories per Meal (%)</strong></label>
+                <p class="text-muted small mb-2">Distribute daily calories across meals. Total must equal 100%.</p>
+                <div class="row g-2">
+                  {% for meal_num in range(1, meals_per_day + 1) %}
+                  <div class="col-md-4">
+                    <label class="form-label small">
+                      {% if meal_num == 1 %}1st{% elif meal_num == 2 %}2nd{% elif meal_num == 3 %}3rd{% else %}{{ meal_num }}th{% endif %} Meal
+                    </label>
+                    <input type="number" class="form-control form-control-sm meal-kcal-input" 
+                           name="meal_kcal_{{ meal_num }}" 
+                           value="{% if meal_settings and meal_settings.get('meal_kcal', {}).get(meal_num|string) %}{{ meal_settings.get('meal_kcal', {}).get(meal_num|string) }}{% else %}{{ (100 / meals_per_day)|round|int }}{% endif %}"
+                           min="0" max="100" step="1" 
+                           {% if total_pct == 100 %}disabled{% endif %}
+                           oninput="updateMealKcalTotal()">
+                    <small class="text-muted">%</small>
+                  </div>
+                  {% endfor %}
                 </div>
-                <small class="text-muted d-block mt-1">
-                  <span class="kmono" id="meal-dry-{{ meal_num }}">50%</span> dry
-                </small>
+                <p class="mt-2 mb-0">
+                  <small>Meal Calories Total: <strong class="kmono" id="meal-kcal-total">0%</strong></small>
+                </p>
               </div>
-              {% endfor %}
+              
+              <!-- Wet/Dry Food Proportion per Meal -->
+              <div class="mb-3">
+                <label class="form-label mb-2"><strong>Wet vs Dry Food per Meal</strong></label>
+                <p class="text-muted small mb-2">Set the proportion of wet food for each meal. Remaining is dry food.</p>
+                <div class="row g-2">
+                  {% for meal_num in range(1, meals_per_day + 1) %}
+                  <div class="col-md-4">
+                    <label class="form-label small">
+                      {% if meal_num == 1 %}1st{% elif meal_num == 2 %}2nd{% elif meal_num == 3 %}3rd{% else %}{{ meal_num }}th{% endif %} Meal
+                    </label>
+                    <div class="input-group input-group-sm">
+                      <input type="number" class="form-control meal-wet-input" 
+                             name="meal_wet_{{ meal_num }}" 
+                             value="{% if meal_settings and meal_settings.get('meal_wet', {}).get(meal_num|string) %}{{ meal_settings.get('meal_wet', {}).get(meal_num|string) }}{% else %}50{% endif %}" 
+                             min="0" max="100" step="1"
+                             {% if total_pct == 100 %}disabled{% endif %}>
+                      <span class="input-group-text">% wet</span>
+                    </div>
+                    <small class="text-muted d-block mt-1">
+                      <span class="kmono" id="meal-dry-{{ meal_num }}">50%</span> dry
+                    </small>
+                  </div>
+                  {% endfor %}
+                </div>
+              </div>
             </div>
           </div>
+          {% else %}
+          <div class="col-md-6">
+            <div class="p-3" style="background: #f8f9fa; border-radius: 8px; border: 1px solid #dee2e6;">
+              <h6 class="mb-3" style="color: #6c757d;">Meal Settings 🍽️</h6>
+              <p class="text-muted mb-0 small">Complete food settings (100%) to configure meal settings</p>
+            </div>
+          </div>
+          {% endif %}
         </div>
-        {% endif %}
         
         <div class="mt-3">
           <button type="submit" id="save-diet-btn" class="btn btn-primary" {% if total_pct == 100 %}style="display: none;"{% endif %}>Save Diet Plan</button>
         </div>
+        {% else %}
+        <div class="text-muted">Please add foods first before creating a diet plan</div>
         {% endif %}
       </form>
     </div>
@@ -917,14 +933,15 @@ function updateMealKcalTotal() {
   const mealKcalInputs = document.querySelectorAll('.meal-kcal-input');
   let total = 0;
   mealKcalInputs.forEach(function(input) {
-    if (!input.disabled) {
-      total += parseFloat(input.value) || 0;
+    const value = parseFloat(input.value);
+    if (!isNaN(value)) {
+      total += value;
     }
   });
   const totalElement = document.getElementById('meal-kcal-total');
   if (totalElement) {
     totalElement.textContent = Math.round(total) + '%';
-    if (total === 100) {
+    if (Math.abs(total - 100) < 0.1) {
       totalElement.style.color = '#28a745';
     } else {
       totalElement.style.color = '#dc3545';
@@ -932,38 +949,38 @@ function updateMealKcalTotal() {
   }
 }
 
-// Initialize meal controls
+  // Initialize meal controls
 (function() {
   // Update dry food percentage when wet food changes
   const mealWetInputs = document.querySelectorAll('.meal-wet-input');
   mealWetInputs.forEach(function(input) {
-    input.addEventListener('input', function() {
-      if (!this.disabled) {
-        const mealNum = this.name.match(/\d+/)[0];
-        const wetPct = parseFloat(this.value) || 0;
-        const dryPct = 100 - wetPct;
-        const dryElement = document.getElementById('meal-dry-' + mealNum);
-        if (dryElement) {
-          dryElement.textContent = Math.round(dryPct) + '%';
-        }
+    function updateDryPct() {
+      const mealNum = input.name.match(/\d+/)[0];
+      const wetPct = parseFloat(input.value);
+      // Handle NaN and ensure value is between 0 and 100
+      const validWetPct = isNaN(wetPct) ? 0 : Math.max(0, Math.min(100, wetPct));
+      const dryPct = 100 - validWetPct;
+      const dryElement = document.getElementById('meal-dry-' + mealNum);
+      if (dryElement) {
+        dryElement.textContent = Math.round(dryPct) + '%';
       }
-    });
+    }
+    
+    input.addEventListener('input', updateDryPct);
+    input.addEventListener('change', updateDryPct);
     
     // Initialize dry percentage on load
-    const mealNum = input.name.match(/\d+/)[0];
-    const wetPct = parseFloat(input.value) || 0;
-    const dryPct = 100 - wetPct;
-    const dryElement = document.getElementById('meal-dry-' + mealNum);
-    if (dryElement) {
-      dryElement.textContent = Math.round(dryPct) + '%';
-    }
+    updateDryPct();
   });
   
   // Initialize meal kcal total
   const mealKcalInputs = document.querySelectorAll('.meal-kcal-input');
   mealKcalInputs.forEach(function(input) {
     input.addEventListener('input', updateMealKcalTotal);
+    input.addEventListener('change', updateMealKcalTotal);
   });
+  
+  // Calculate initial total on page load
   updateMealKcalTotal();
 })();
 </script>
