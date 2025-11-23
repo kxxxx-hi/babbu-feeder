@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 # Email sending
 try:
     from sendgrid import SendGridAPIClient
-    from sendgrid.helpers.mail import Mail
+    from sendgrid.helpers.mail import Mail, Email
     SENDGRID_AVAILABLE = True
 except ImportError:
     SENDGRID_AVAILABLE = False
@@ -1245,34 +1245,56 @@ def generate_diet_plan_email(cat_id: int, recipient_email: str) -> Optional[str]
         if not per_meal:
             return f"No meal plan available for {cat_name}"
         
+        # Get profile picture URL
+        profile_pic_url = cat_data.get("profile_pic_url")
+        
         # Build email HTML
         today = date.today().strftime("%B %d, %Y")
+        
+        # Profile picture HTML (if available)
+        profile_pic_html = ""
+        if profile_pic_url:
+            profile_pic_html = f'<div style="text-align: center; margin-bottom: 15px;"><img src="{profile_pic_url}" alt="{cat_name}" style="width: 120px; height: 120px; object-fit: cover; border-radius: 50%; border: 3px solid #dee2e6;" /></div>'
+        else:
+            # Fallback emoji if no picture
+            profile_pic_html = f'<div style="text-align: center; margin-bottom: 15px; font-size: 60px;">🐱</div>'
         
         html_content = f"""
         <!DOCTYPE html>
         <html>
         <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
             <style>
-                body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
-                .header {{ background: linear-gradient(135deg, #fff5f5 0%, #f8f9fa 100%); padding: 20px; border-radius: 8px; margin-bottom: 20px; }}
+                body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 20px; }}
+                .header {{ background: linear-gradient(135deg, #fff5f5 0%, #f8f9fa 100%); padding: 20px; border-radius: 8px; margin-bottom: 20px; text-align: center; }}
+                .header-content {{ display: inline-block; text-align: left; }}
                 .meal-section {{ margin: 20px 0; padding: 15px; background: #f8f9fa; border-radius: 8px; }}
                 .meal-title {{ color: #e91e63; font-weight: 600; font-size: 1.1rem; margin-bottom: 10px; }}
                 table {{ width: 100%; border-collapse: collapse; margin-top: 10px; }}
                 th, td {{ padding: 8px; text-align: left; border-bottom: 1px solid #ddd; }}
                 th {{ background-color: #fff5f5; font-weight: 600; }}
-                .badge {{ padding: 3px 8px; border-radius: 4px; font-size: 0.85em; }}
+                .badge {{ padding: 3px 8px; border-radius: 4px; font-size: 0.85em; display: inline-block; }}
                 .badge-wet {{ background-color: #0dcaf0; color: white; }}
                 .badge-dry {{ background-color: #6c757d; color: white; }}
                 .summary {{ background: #e7f3ff; padding: 15px; border-radius: 8px; margin-top: 20px; }}
+                @media only screen and (max-width: 600px) {{
+                    body {{ padding: 10px; }}
+                    .header {{ padding: 15px; }}
+                    table {{ font-size: 0.9em; }}
+                }}
             </style>
         </head>
         <body>
             <div class="header">
-                <h2>🐾 Daily Diet Plan for {cat_name}</h2>
-                <p><strong>Date:</strong> {today}</p>
-                <p><strong>Daily Target:</strong> {daily_kcal:.0f} kcal</p>
-                <p><strong>Life Stage:</strong> {stage_display}</p>
-                <p><strong>Meals Per Day:</strong> {meals_per_day}</p>
+                {profile_pic_html}
+                <div class="header-content">
+                    <h2 style="margin-top: 0;">🐾 Daily Diet Plan for {cat_name}</h2>
+                    <p><strong>Date:</strong> {today}</p>
+                    <p><strong>Daily Target:</strong> {daily_kcal:.0f} kcal</p>
+                    <p><strong>Life Stage:</strong> {stage_display}</p>
+                    <p><strong>Meals Per Day:</strong> {meals_per_day}</p>
+                </div>
             </div>
         """
         
@@ -1361,10 +1383,25 @@ Meals Per Day: {meals_per_day}
         
         plain_text += "💡 Tip: Feed according to the meal plan above. Adjust portions if your cat's activity level or weight changes.\n"
         
+        # Add unsubscribe link to HTML
+        html_content += """
+            <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #ddd; text-align: center; font-size: 0.85em; color: #6c757d;">
+                <p>This is an automated daily diet plan email from Cat Feeding Planner.</p>
+                <p>If you no longer wish to receive these emails, please contact the administrator.</p>
+            </div>
+        </body>
+        </html>
+        """
+        
         # Send email
         from_email = os.getenv("SENDGRID_FROM_EMAIL", "noreply@babbu-feeder.com")
+        from_name = os.getenv("SENDGRID_FROM_NAME", "Cat Feeding Planner")
+        
+        # Create from address with name
+        from_address = Email(from_email, from_name)
+        
         message = Mail(
-            from_email=from_email,
+            from_email=from_address,
             to_emails=recipient_email,
             subject=f"🐾 Daily Diet Plan for {cat_name} - {today}",
             html_content=html_content,
@@ -1373,6 +1410,12 @@ Meals Per Day: {meals_per_day}
         
         # Add reply-to header (same as from_email for better deliverability)
         message.reply_to = from_email
+        
+        # Add custom headers for better deliverability
+        message.custom_args = {
+            "cat_id": str(cat_id),
+            "email_type": "daily_diet_plan"
+        }
         
         # Add BCC if multiple recipients are configured (for privacy)
         bcc_emails_str = os.getenv("DAILY_EMAIL_BCC", "")
