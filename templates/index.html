@@ -130,6 +130,32 @@
       border: 1px dashed #dee2e6;
     }
     @media (max-width: 768px) {
+      /* Reduce all text sizes by 30% on mobile (multiply by 0.7) */
+      body {
+        font-size: 10.5px; /* 15px * 0.7 */
+      }
+      html {
+        font-size: 10.5px;
+      }
+      .cat-name {
+        font-size: 1.225rem; /* 1.75rem * 0.7 */
+      }
+      .stat-label {
+        font-size: 0.6125rem; /* 0.875rem * 0.7 */
+      }
+      .stat-value {
+        font-size: 1.05rem; /* 1.5rem * 0.7 */
+      }
+      h1, .h1 { font-size: calc(1.75rem * 0.7); }
+      h2, .h2 { font-size: calc(1.5rem * 0.7); }
+      h3, .h3 { font-size: calc(1.25rem * 0.7); }
+      h4, .h4 { font-size: calc(1.1rem * 0.7); }
+      h5, .h5 { font-size: calc(1rem * 0.7); }
+      h6, .h6 { font-size: calc(0.875rem * 0.7); }
+      .btn { font-size: calc(1rem * 0.7); }
+      .form-control, .form-select { font-size: calc(1rem * 0.7); }
+      .table { font-size: calc(1rem * 0.7); }
+      .small, small { font-size: calc(0.875rem * 0.7); }
       .header-actions {
         width: 100%;
         flex-direction: column;

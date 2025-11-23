@@ -1334,14 +1334,45 @@ def generate_diet_plan_email(cat_id: int, recipient_email: str) -> Optional[str]
         </html>
         """
         
+        # Build plain text version for better deliverability
+        plain_text = f"""Daily Diet Plan for {cat_name}
+Date: {today}
+Daily Target: {daily_kcal:.0f} kcal
+Life Stage: {stage_display}
+Meals Per Day: {meals_per_day}
+
+"""
+        
+        for meal_num in sorted(meals_dict.keys()):
+            meal_items = meals_dict[meal_num]
+            meal_total_kcal = sum(item.get("kcal_meal", 0) for item in meal_items)
+            meal_label = f"{meal_num}{'st' if meal_num == 1 else 'nd' if meal_num == 2 else 'rd' if meal_num == 3 else 'th'} Meal"
+            
+            plain_text += f"{meal_label} ({meal_total_kcal:.0f} kcal):\n"
+            plain_text += "-" * 50 + "\n"
+            
+            for item in meal_items:
+                food_name = item.get("Food", "")
+                food_type = item.get("food_type", "").title()
+                grams = item.get("grams_per_meal", 0)
+                plain_text += f"  {food_name} ({food_type}): {grams:.1f} g\n"
+            
+            plain_text += "\n"
+        
+        plain_text += "💡 Tip: Feed according to the meal plan above. Adjust portions if your cat's activity level or weight changes.\n"
+        
         # Send email
         from_email = os.getenv("SENDGRID_FROM_EMAIL", "noreply@babbu-feeder.com")
         message = Mail(
             from_email=from_email,
             to_emails=recipient_email,
             subject=f"🐾 Daily Diet Plan for {cat_name} - {today}",
-            html_content=html_content
+            html_content=html_content,
+            plain_text_content=plain_text
         )
+        
+        # Add reply-to header (same as from_email for better deliverability)
+        message.reply_to = from_email
         
         # Add BCC if multiple recipients are configured (for privacy)
         bcc_emails_str = os.getenv("DAILY_EMAIL_BCC", "")
