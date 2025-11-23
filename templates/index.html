@@ -982,8 +982,8 @@ function updateMealKcalTotal() {
     input.addEventListener('input', updateDryPct);
     input.addEventListener('change', updateDryPct);
     
-    // Initialize dry percentage on load
-    updateDryPct();
+    // Initialize dry percentage on load (with delay to ensure DOM is ready)
+    setTimeout(updateDryPct, 50);
   });
   
   // Initialize meal kcal total
