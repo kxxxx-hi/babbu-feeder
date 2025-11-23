@@ -208,7 +208,7 @@
                 <option value="adult_intact" {% if selected_cat.life_stage_override == 'adult_intact' %}selected{% endif %}>Adult (Intact)</option>
                 <option value="adult_obese_prone" {% if selected_cat.life_stage_override == 'adult_obese_prone' %}selected{% endif %}>Adult (Obese-Prone)</option>
               </select>
-              <button type="button" class="btn btn-sm btn-link p-0 ms-1" onclick="toggleLifeStageEdit()" title="Cancel">✕</button>
+              <a href="#" class="text-decoration-none ms-2 small" onclick="toggleLifeStageEdit(); return false;" title="Cancel" style="color: #6c757d;">(cancel)</a>
             </form>
           </span>
         </div>
