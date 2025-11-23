@@ -1251,13 +1251,13 @@ def generate_diet_plan_email(cat_id: int, recipient_email: str) -> Optional[str]
         # Build email HTML
         today = date.today().strftime("%B %d, %Y")
         
-        # Profile picture HTML (if available)
+        # Profile picture HTML (if available) - reduced by 20%
         profile_pic_html = ""
         if profile_pic_url:
-            profile_pic_html = f'<div style="text-align: center; margin-bottom: 15px;"><img src="{profile_pic_url}" alt="{cat_name}" style="width: 120px; height: 120px; object-fit: cover; border-radius: 50%; border: 3px solid #dee2e6;" /></div>'
+            profile_pic_html = f'<div style="text-align: center; margin-bottom: 12px;"><img src="{profile_pic_url}" alt="{cat_name}" style="width: 96px; height: 96px; object-fit: cover; border-radius: 50%; border: 2px solid #dee2e6;" /></div>'
         else:
-            # Fallback emoji if no picture
-            profile_pic_html = f'<div style="text-align: center; margin-bottom: 15px; font-size: 60px;">🐱</div>'
+            # Fallback emoji if no picture - reduced by 20%
+            profile_pic_html = f'<div style="text-align: center; margin-bottom: 12px; font-size: 48px;">🐱</div>'
         
         html_content = f"""
         <!DOCTYPE html>
@@ -1266,22 +1266,24 @@ def generate_diet_plan_email(cat_id: int, recipient_email: str) -> Optional[str]
             <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
             <style>
-                body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 20px; }}
-                .header {{ background: linear-gradient(135deg, #fff5f5 0%, #f8f9fa 100%); padding: 20px; border-radius: 8px; margin-bottom: 20px; text-align: center; }}
+                body {{ font-family: Arial, sans-serif; line-height: 1.5; color: #333; margin: 0; padding: 16px; font-size: 0.9em; }}
+                .header {{ background: linear-gradient(135deg, #fff5f5 0%, #f8f9fa 100%); padding: 16px; border-radius: 6px; margin-bottom: 16px; text-align: center; }}
                 .header-content {{ display: inline-block; text-align: left; }}
-                .meal-section {{ margin: 20px 0; padding: 15px; background: #f8f9fa; border-radius: 8px; }}
-                .meal-title {{ color: #e91e63; font-weight: 600; font-size: 1.1rem; margin-bottom: 10px; }}
-                table {{ width: 100%; border-collapse: collapse; margin-top: 10px; }}
-                th, td {{ padding: 8px; text-align: left; border-bottom: 1px solid #ddd; }}
+                h2 {{ font-size: 1.28em; margin: 0 0 8px 0; }}
+                p {{ margin: 4px 0; font-size: 0.9em; }}
+                .meal-section {{ margin: 16px 0; padding: 12px; background: #f8f9fa; border-radius: 6px; }}
+                .meal-title {{ color: #e91e63; font-weight: 600; font-size: 0.88rem; margin-bottom: 8px; }}
+                table {{ width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 0.9em; }}
+                th, td {{ padding: 6px; text-align: left; border-bottom: 1px solid #ddd; }}
                 th {{ background-color: #fff5f5; font-weight: 600; }}
-                .badge {{ padding: 3px 8px; border-radius: 4px; font-size: 0.85em; display: inline-block; }}
+                .badge {{ padding: 2px 6px; border-radius: 3px; font-size: 0.68em; display: inline-block; }}
                 .badge-wet {{ background-color: #0dcaf0; color: white; }}
                 .badge-dry {{ background-color: #6c757d; color: white; }}
-                .summary {{ background: #e7f3ff; padding: 15px; border-radius: 8px; margin-top: 20px; }}
+                .summary {{ background: #e7f3ff; padding: 12px; border-radius: 6px; margin-top: 16px; font-size: 0.85em; }}
                 @media only screen and (max-width: 600px) {{
-                    body {{ padding: 10px; }}
-                    .header {{ padding: 15px; }}
-                    table {{ font-size: 0.9em; }}
+                    body {{ padding: 8px; }}
+                    .header {{ padding: 12px; }}
+                    table {{ font-size: 0.8em; }}
                 }}
             </style>
         </head>
@@ -1289,7 +1291,7 @@ def generate_diet_plan_email(cat_id: int, recipient_email: str) -> Optional[str]
             <div class="header">
                 {profile_pic_html}
                 <div class="header-content">
-                    <h2 style="margin-top: 0;">🐾 Daily Diet Plan for {cat_name}</h2>
+                    <h2 style="margin-top: 0;">Daily Diet Plan for {cat_name}</h2>
                     <p><strong>Date:</strong> {today}</p>
                     <p><strong>Daily Target:</strong> {daily_kcal:.0f} kcal</p>
                     <p><strong>Life Stage:</strong> {stage_display}</p>
@@ -1385,9 +1387,9 @@ Meals Per Day: {meals_per_day}
         
         # Add unsubscribe link to HTML
         html_content += """
-            <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #ddd; text-align: center; font-size: 0.85em; color: #6c757d;">
-                <p>This is an automated daily diet plan email from Cat Feeding Planner.</p>
-                <p>If you no longer wish to receive these emails, please contact the administrator.</p>
+            <div style="margin-top: 24px; padding-top: 16px; border-top: 1px solid #ddd; text-align: center; font-size: 0.68em; color: #6c757d;">
+                <p style="margin: 4px 0;">This is an automated daily diet plan email from Cat Feeding Planner.</p>
+                <p style="margin: 4px 0;">If you no longer wish to receive these emails, please contact the administrator.</p>
             </div>
         </body>
         </html>
@@ -1403,7 +1405,7 @@ Meals Per Day: {meals_per_day}
         message = Mail(
             from_email=from_address,
             to_emails=recipient_email,
-            subject=f"🐾 Daily Diet Plan for {cat_name} - {today}",
+            subject=f"Daily Diet Plan for {cat_name} - {today}",
             html_content=html_content,
             plain_text_content=plain_text
         )
