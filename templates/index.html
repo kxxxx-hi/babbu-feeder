@@ -550,6 +550,17 @@
               <div class="mb-3">
                 <label class="form-label mb-2"><strong>Wet vs Dry Food per Meal</strong></label>
                 <p class="text-muted small mb-2">Set the proportion of wet food for each meal. Remaining is dry food.</p>
+                {% if meal_warnings %}
+                <div class="alert alert-warning alert-dismissible fade show mb-3" role="alert">
+                  <strong>⚠️ Warning:</strong>
+                  <ul class="mb-0 mt-2 small">
+                    {% for warning in meal_warnings %}
+                    <li>{{ warning.message }}</li>
+                    {% endfor %}
+                  </ul>
+                  <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+                {% endif %}
                 <div class="row g-2">
                   {% for meal_num in range(1, meals_per_day + 1) %}
                   <div class="col-md-4">
