@@ -443,11 +443,14 @@
           <h6 class="mb-0">Create Diet Plan 🥘</h6>
           <p class="text-muted mb-0 small">Set the percentage of daily calories for each food. Total must equal 100%.</p>
         </div>
-        {% if total_pct == 100 %}
-        <button type="button" id="edit-diet-btn" class="btn btn-outline-secondary btn-sm" onclick="enableDietEdit()">
-          Edit Diet Plan
-        </button>
-        {% endif %}
+        <div>
+          <button type="submit" id="save-diet-btn" class="btn btn-primary btn-sm" {% if total_pct == 100 %}style="display: none;"{% endif %}>Save Diet Plan</button>
+          {% if total_pct == 100 %}
+          <button type="button" id="edit-diet-btn" class="btn btn-outline-secondary btn-sm" onclick="enableDietEdit()">
+            Edit Diet Plan
+          </button>
+          {% endif %}
+        </div>
       </div>
       <form method="post">
         <input type="hidden" name="action" value="save_diet">
@@ -592,10 +595,6 @@
             </div>
           </div>
           {% endif %}
-        </div>
-        
-        <div class="mt-3">
-          <button type="submit" id="save-diet-btn" class="btn btn-primary" {% if total_pct == 100 %}style="display: none;"{% endif %}>Save Diet Plan</button>
         </div>
         {% else %}
         <div class="text-muted">Please add foods first before creating a diet plan</div>
