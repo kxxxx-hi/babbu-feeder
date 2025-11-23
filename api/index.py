@@ -1358,7 +1358,24 @@ def generate_diet_plan_email(cat_id: int, recipient_email: str) -> Optional[str]
             print(f"Email sent successfully to {recipient_email} for cat {cat_id}")
             return None
         else:
-            return f"SendGrid API error: {response.status_code}"
+            # Get more details from the error response
+            error_body = ""
+            try:
+                error_body = response.body.decode('utf-8') if hasattr(response, 'body') else str(response.body)
+            except:
+                error_body = "Unable to decode error response"
+            
+            error_msg = f"SendGrid API error {response.status_code}: {error_body}"
+            
+            # Provide specific guidance for common errors
+            if response.status_code == 403:
+                error_msg += "\n\nCommon causes:\n"
+                error_msg += "1. Sender email not verified in SendGrid (Settings > Sender Authentication)\n"
+                error_msg += "2. API key doesn't have 'Mail Send' permissions\n"
+                error_msg += "3. SendGrid account needs activation or verification"
+            
+            print(f"SendGrid error: {error_msg}")
+            return error_msg
             
     except Exception as e:
         print(f"Error sending email: {e}")
