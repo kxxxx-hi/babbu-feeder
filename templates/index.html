@@ -193,9 +193,9 @@
           <strong>Current Age:</strong> {{ age_display }} &nbsp;|&nbsp;
           <strong>Life Stage:</strong> 
           <span id="life-stage-display">{{ stage_display }}</span>
-          <button type="button" class="btn btn-sm btn-link p-0 ms-2" style="text-decoration: none; vertical-align: baseline;" onclick="toggleLifeStageEdit()" title="Edit life stage">
-            ✏️
-          </button>
+          <a href="#" class="text-decoration-none ms-2 small" onclick="toggleLifeStageEdit(); return false;" title="Edit life stage" style="color: #6c757d;">
+            (edit)
+          </a>
           <span id="life-stage-edit" style="display: none;" class="ms-2">
             <form method="post" class="d-inline" onsubmit="return saveLifeStage(event)">
               <input type="hidden" name="action" value="update_life_stage">
