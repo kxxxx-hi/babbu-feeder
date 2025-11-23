@@ -1411,11 +1411,9 @@ Meals Per Day: {meals_per_day}
         # Add reply-to header (same as from_email for better deliverability)
         message.reply_to = from_email
         
-        # Add custom headers for better deliverability
-        message.custom_args = {
-            "cat_id": str(cat_id),
-            "email_type": "daily_diet_plan"
-        }
+        # Add custom arguments for tracking (use add_custom_arg method)
+        message.add_custom_arg("cat_id", str(cat_id))
+        message.add_custom_arg("email_type", "daily_diet_plan")
         
         # Add BCC if multiple recipients are configured (for privacy)
         bcc_emails_str = os.getenv("DAILY_EMAIL_BCC", "")
