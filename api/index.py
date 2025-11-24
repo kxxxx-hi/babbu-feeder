@@ -462,12 +462,12 @@ def get_all_cats():
         print(f"Error reading cats list: {e}")
         return []
 
-def get_cat(cat_id: int):
+def get_cat(cat_id: int, force_refresh: bool = False):
     """Get full cat data including profile, weights, diet, and meals"""
     if not STORAGE_AVAILABLE or not cat_id:
         return None
     try:
-        data = storage_manager.read_json(f"data/cat_{cat_id}")
+        data = storage_manager.read_json(f"data/cat_{cat_id}", force_refresh=force_refresh)
         if not data:
             return None
         return data
@@ -622,12 +622,12 @@ def save_weight(cat_id: int, weight_dt: str, weight_kg: float) -> bool:
         traceback.print_exc()
         return False
 
-def get_foods():
+def get_foods(force_refresh: bool = False):
     """Get foods from Google Cloud Storage"""
     if not STORAGE_AVAILABLE:
         return []
     try:
-        data = storage_manager.read_json("data/foods")
+        data = storage_manager.read_json("data/foods", force_refresh=force_refresh)
         if not data:
             return []
         foods = data.get("foods", [])
