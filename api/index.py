@@ -1590,9 +1590,10 @@ def send_daily_email():
 
 @app.route("/api/fix-image-url", methods=["GET", "POST"])
 def fix_image_url():
-    """Debug endpoint to fix image URL for a cat. Can search for image by filename."""
+    """Debug endpoint to fix image URL for a cat. Can search for image by filename or set URL directly."""
     cat_id = request.args.get("cat_id") or request.form.get("cat_id")
     image_filename = request.args.get("filename") or request.form.get("filename")
+    direct_url = request.args.get("url") or request.form.get("url")
     
     if not cat_id:
         return jsonify({"error": "cat_id parameter required"}), 400
@@ -1604,6 +1605,20 @@ def fix_image_url():
             return jsonify({"error": f"Cat {cat_id} not found"}), 404
         
         old_url = cat_data.get("profile_pic_url")
+        
+        # If direct URL provided, use it
+        if direct_url:
+            cat_data["profile_pic_url"] = direct_url
+            save_cat(cat_data)
+            # Also ensure it's public
+            ensure_image_public_url(direct_url)
+            return jsonify({
+                "success": True,
+                "cat_id": cat_id,
+                "old_url": old_url,
+                "new_url": direct_url,
+                "message": "Image URL set directly"
+            })
         
         # If no URL stored and filename provided, search for the image
         if not old_url and image_filename:
