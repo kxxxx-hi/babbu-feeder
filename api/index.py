@@ -1590,8 +1590,10 @@ def send_daily_email():
 
 @app.route("/api/fix-image-url", methods=["GET", "POST"])
 def fix_image_url():
-    """Debug endpoint to fix image URL for a cat"""
+    """Debug endpoint to fix image URL for a cat. Can search for image by filename."""
     cat_id = request.args.get("cat_id") or request.form.get("cat_id")
+    image_filename = request.args.get("filename") or request.form.get("filename")
+    
     if not cat_id:
         return jsonify({"error": "cat_id parameter required"}), 400
     
@@ -1602,28 +1604,78 @@ def fix_image_url():
             return jsonify({"error": f"Cat {cat_id} not found"}), 404
         
         old_url = cat_data.get("profile_pic_url")
-        new_url = ensure_image_public_url(old_url)
         
-        # Update the cat data if URL changed
-        if new_url != old_url:
-            cat_data["profile_pic_url"] = new_url
-            save_cat(cat_data)
-            return jsonify({
-                "success": True,
-                "cat_id": cat_id,
-                "old_url": old_url,
-                "new_url": new_url,
-                "message": "Image URL fixed and saved"
-            })
+        # If no URL stored and filename provided, search for the image
+        if not old_url and image_filename:
+            # Try different possible paths
+            possible_paths = [
+                f"cat_images/{image_filename}",
+                image_filename,
+                f"data/cat_images/{image_filename}"
+            ]
+            
+            found_url = None
+            for blob_key in possible_paths:
+                try:
+                    blob = storage_manager.bucket.blob(blob_key)
+                    if blob.exists():
+                        # Make it public
+                        try:
+                            blob.make_public()
+                        except:
+                            pass
+                        found_url = f"https://storage.googleapis.com/{storage_manager.bucket_name}/{blob_key}"
+                        print(f"Found image at: {blob_key}")
+                        break
+                except Exception as e:
+                    print(f"Error checking blob {blob_key}: {e}")
+                    continue
+            
+            if found_url:
+                cat_data["profile_pic_url"] = found_url
+                save_cat(cat_data)
+                return jsonify({
+                    "success": True,
+                    "cat_id": cat_id,
+                    "old_url": None,
+                    "new_url": found_url,
+                    "message": f"Image found and URL saved: {found_url}"
+                })
+            else:
+                return jsonify({
+                    "error": f"Image '{image_filename}' not found in GCS",
+                    "searched_paths": possible_paths
+                }), 404
+        
+        # If URL exists, fix it
+        if old_url:
+            new_url = ensure_image_public_url(old_url)
+            if new_url != old_url:
+                cat_data["profile_pic_url"] = new_url
+                save_cat(cat_data)
+                return jsonify({
+                    "success": True,
+                    "cat_id": cat_id,
+                    "old_url": old_url,
+                    "new_url": new_url,
+                    "message": "Image URL fixed and saved"
+                })
+            else:
+                return jsonify({
+                    "success": True,
+                    "cat_id": cat_id,
+                    "url": old_url,
+                    "message": "Image URL is already correct"
+                })
         else:
             return jsonify({
-                "success": True,
-                "cat_id": cat_id,
-                "url": old_url,
-                "message": "Image URL is already correct"
-            })
+                "error": "No image URL stored and no filename provided",
+                "usage": "Use ?cat_id=1&filename=1763945945944_Youtiao.jpg to search for image"
+            }), 400
+            
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        import traceback
+        return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
 
 @app.route("/api/cron-status", methods=["GET"])
 def cron_status():
