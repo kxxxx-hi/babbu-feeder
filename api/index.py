@@ -1772,6 +1772,85 @@ def fix_image_url():
         import traceback
         return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
 
+@app.route("/api/test-image-url", methods=["GET"])
+def test_image_url():
+    """Test if an image URL is accessible"""
+    cat_id = request.args.get("cat_id")
+    if not cat_id:
+        return jsonify({"error": "cat_id parameter required"}), 400
+    
+    try:
+        cat_id = int(cat_id)
+        cat_data = get_cat(cat_id)
+        if not cat_data:
+            return jsonify({"error": f"Cat {cat_id} not found"}), 404
+        
+        image_url = cat_data.get("profile_pic_url")
+        if not image_url:
+            return jsonify({
+                "error": "No profile picture URL stored",
+                "cat_id": cat_id
+            }), 404
+        
+        # Try to access the blob
+        try:
+            from google.cloud import storage
+            
+            # Extract blob key from URL
+            if "storage.googleapis.com" in image_url:
+                parts = image_url.split("/")
+                if len(parts) >= 4:
+                    bucket_name = parts[3]
+                    blob_key = "/".join(parts[4:])
+                    
+                    blob = storage_manager.bucket.blob(blob_key)
+                    if blob.exists():
+                        # Check if public
+                        try:
+                            blob.reload()
+                            is_public = blob.public_url is not None or len(blob.acl.all()) > 0
+                        except:
+                            is_public = False
+                        
+                        # Try to make it public
+                        try:
+                            blob.make_public()
+                            is_public = True
+                        except Exception as e:
+                            print(f"Could not make public: {e}")
+                        
+                        return jsonify({
+                            "success": True,
+                            "cat_id": cat_id,
+                            "image_url": image_url,
+                            "blob_key": blob_key,
+                            "exists": True,
+                            "is_public": is_public,
+                            "public_url": blob.public_url if hasattr(blob, 'public_url') else image_url,
+                            "size": blob.size if hasattr(blob, 'size') else None,
+                            "content_type": blob.content_type if hasattr(blob, 'content_type') else None
+                        })
+                    else:
+                        return jsonify({
+                            "error": "Blob does not exist in GCS",
+                            "blob_key": blob_key,
+                            "image_url": image_url
+                        }), 404
+        except Exception as e:
+            return jsonify({
+                "error": str(e),
+                "image_url": image_url
+            }), 500
+        
+        return jsonify({
+            "error": "Could not parse image URL",
+            "image_url": image_url
+        }), 400
+        
+    except Exception as e:
+        import traceback
+        return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
+
 @app.route("/api/cron-status", methods=["GET"])
 def cron_status():
     """Check cron job configuration and status."""
