@@ -772,6 +772,51 @@ def get_meals(cat_id: int):
         print(f"Error reading meals: {e}")
         return []
 
+# Helper function to ensure image URL is correct and blob is public
+def ensure_image_public_url(image_url: Optional[str]) -> Optional[str]:
+    """Ensure an image URL is correct and the blob is public. Returns the correct public URL."""
+    if not image_url or not STORAGE_AVAILABLE:
+        return image_url
+    
+    try:
+        from google.cloud import storage
+        
+        # If URL is already in the correct format, extract the blob key
+        if "storage.googleapis.com" in image_url:
+            # Extract blob key from URL: https://storage.googleapis.com/bucket_name/cat_images/filename
+            parts = image_url.split("/")
+            if len(parts) >= 4:
+                bucket_name = parts[3]
+                blob_key = "/".join(parts[4:])
+                
+                # Verify it's the correct bucket
+                if bucket_name == storage_manager.bucket_name:
+                    blob = storage_manager.bucket.blob(blob_key)
+                    if blob.exists():
+                        # Make sure it's public
+                        try:
+                            blob.make_public()
+                        except:
+                            pass  # May already be public
+                        return image_url
+        
+        # If URL is just a filename or old format, try to construct the correct URL
+        # Check if it's just a filename (like "1763945945944_Youtiao.jpg")
+        if "/" not in image_url and image_url.endswith(('.jpg', '.jpeg', '.png', '.gif')):
+            blob_key = f"cat_images/{image_url}"
+            blob = storage_manager.bucket.blob(blob_key)
+            if blob.exists():
+                try:
+                    blob.make_public()
+                except:
+                    pass
+                return f"https://storage.googleapis.com/{storage_manager.bucket_name}/{blob_key}"
+        
+        return image_url
+    except Exception as e:
+        print(f"Error ensuring image is public: {e}")
+        return image_url
+
 # Helper function to upload image to Google Cloud Storage
 def upload_image_to_blob(file, filename: str) -> Optional[str]:
     """Upload image file to Google Cloud Storage and return public URL"""
@@ -795,11 +840,15 @@ def upload_image_to_blob(file, filename: str) -> Optional[str]:
         blob.upload_from_string(file_content, content_type=content_type)
         
         # Make blob publicly accessible
-        blob.make_public()
+        try:
+            blob.make_public()
+        except Exception as e:
+            print(f"Warning: Could not make blob public (may already be public): {e}")
         
-        # Return public URL
-        public_url = blob.public_url
-        print(f"Successfully uploaded image to GCS: {blob_key}")
+        # Return public URL - use the proper GCS public URL format
+        # Format: https://storage.googleapis.com/{bucket_name}/{blob_key}
+        public_url = f"https://storage.googleapis.com/{storage_manager.bucket_name}/{blob_key}"
+        print(f"Successfully uploaded image to GCS: {blob_key}, URL: {public_url}")
         return public_url
     except Exception as e:
         print(f"Error uploading image: {e}")
