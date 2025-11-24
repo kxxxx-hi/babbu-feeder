@@ -546,12 +546,12 @@ def save_cat(cat_data: dict):
         traceback.print_exc()
         return None
 
-def get_weights(cat_id: int):
+def get_weights(cat_id: int, force_refresh: bool = False):
     """Get weight logs for a specific cat"""
     if not STORAGE_AVAILABLE:
         return []
     try:
-        data = get_cat(cat_id)
+        data = get_cat(cat_id, force_refresh=force_refresh)
         if not data:
             return []
         weights = data.get("weights", [])
@@ -1083,11 +1083,14 @@ def home():
             print(f"Calling save_weight with cat_id={cat_id}, wdt={wdt}, wkg={wkg}")
             success = save_weight(cat_id, wdt, wkg)
             if not success:
-                print(f"Warning: Weight save may have failed for cat {cat_id}")
-                # Still redirect but log the warning - user can check logs
+                print(f"Error: Weight save failed for cat {cat_id}")
+                # Add error parameter to show user
+                tab = request.form.get("current_tab", "log")
+                return redirect(url_for("home", cat_id=cat_id, tab=tab, error="weight_save_failed"))
             tab = request.form.get("current_tab", "log")
             print(f"Redirecting to home with cat_id={cat_id}, tab={tab}")
-            return redirect(url_for("home", cat_id=cat_id, tab=tab))
+            # Add refresh parameter to force fresh data read
+            return redirect(url_for("home", cat_id=cat_id, tab=tab, _refresh="1"))
         except ValueError as e:
             print(f"Error parsing weight: {e}")
             import traceback
@@ -1117,8 +1120,11 @@ def home():
         }
         success = save_food(food_data)
         if not success:
-            print(f"Warning: Food save may have failed for: {name}")
-        return redirect(url_for("home", cat_id=cat_id, tab=tab) if cat_id else url_for("home", tab=tab))
+            print(f"Error: Food save failed for: {name}")
+            # Add error parameter to show user
+            return redirect(url_for("home", cat_id=cat_id, tab=tab, error="food_save_failed") if cat_id else url_for("home", tab=tab, error="food_save_failed"))
+        # Add success parameter and force refresh
+        return redirect(url_for("home", cat_id=cat_id, tab=tab, _refresh="1") if cat_id else url_for("home", tab=tab, _refresh="1"))
 
     if action == "delete_food":
         fid = int(request.form.get("del_food_id"))
@@ -1222,8 +1228,10 @@ def home():
         cat_id = None
 
     # Get data for selected cat
-    weights_list = get_weights(cat_id) if cat_id else []
-    foods_list = get_foods()
+    # Use force_refresh if _refresh parameter is present (after a save operation)
+    force_refresh = request.args.get("_refresh") == "1"
+    weights_list = get_weights(cat_id, force_refresh=force_refresh) if cat_id else []
+    foods_list = get_foods(force_refresh=force_refresh)
     diet_list = get_diet(cat_id) if cat_id else []
 
     # Convert to DataFrames for compatibility
