@@ -1607,7 +1607,7 @@ def fix_image_url():
         
         # If no URL stored and filename provided, search for the image
         if not old_url and image_filename:
-            # Try different possible paths
+            # First try different possible paths
             possible_paths = [
                 f"cat_images/{image_filename}",
                 image_filename,
@@ -1615,6 +1615,8 @@ def fix_image_url():
             ]
             
             found_url = None
+            found_path = None
+            
             for blob_key in possible_paths:
                 try:
                     blob = storage_manager.bucket.blob(blob_key)
@@ -1625,11 +1627,34 @@ def fix_image_url():
                         except:
                             pass
                         found_url = f"https://storage.googleapis.com/{storage_manager.bucket_name}/{blob_key}"
+                        found_path = blob_key
                         print(f"Found image at: {blob_key}")
                         break
                 except Exception as e:
                     print(f"Error checking blob {blob_key}: {e}")
                     continue
+            
+            # If not found in common paths, search by filename pattern
+            if not found_url:
+                print(f"Searching for image by filename pattern: {image_filename}")
+                try:
+                    # Search for blobs containing the filename
+                    all_blobs = storage_manager.bucket.list_blobs()
+                    for blob in all_blobs:
+                        if image_filename in blob.name or blob.name.endswith(image_filename):
+                            # Make it public
+                            try:
+                                blob.make_public()
+                            except:
+                                pass
+                            found_url = f"https://storage.googleapis.com/{storage_manager.bucket_name}/{blob.name}"
+                            found_path = blob.name
+                            print(f"Found image by pattern search at: {blob.name}")
+                            break
+                except Exception as e:
+                    print(f"Error searching blobs: {e}")
+                    import traceback
+                    traceback.print_exc()
             
             if found_url:
                 cat_data["profile_pic_url"] = found_url
@@ -1639,12 +1664,21 @@ def fix_image_url():
                     "cat_id": cat_id,
                     "old_url": None,
                     "new_url": found_url,
+                    "found_path": found_path,
                     "message": f"Image found and URL saved: {found_url}"
                 })
             else:
+                # List some example blobs to help debug
+                try:
+                    sample_blobs = list(storage_manager.bucket.list_blobs(max_results=10))
+                    blob_names = [blob.name for blob in sample_blobs]
+                except:
+                    blob_names = []
+                
                 return jsonify({
                     "error": f"Image '{image_filename}' not found in GCS",
-                    "searched_paths": possible_paths
+                    "searched_paths": possible_paths,
+                    "sample_blobs_in_bucket": blob_names[:10] if blob_names else "Could not list blobs"
                 }), 404
         
         # If URL exists, fix it
