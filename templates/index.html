@@ -920,10 +920,11 @@ if (trend && trend.length > 0) {
   
   function calculateGrams(input) {
     const pct = parseFloat(input.value) || 0;
-    const kcalPerKg = parseFloat(input.dataset.kcalPerKg) || 0;
-    const foodId = input.dataset.foodId;
+    // Try both camelCase and kebab-case attribute access
+    const kcalPerKg = parseFloat(input.dataset.kcalPerKg || input.getAttribute('data-kcal-per-kg')) || 0;
+    const foodId = input.dataset.foodId || input.getAttribute('data-food-id');
     
-    if (pct <= 0 || kcalPerKg <= 0) {
+    if (pct <= 0 || kcalPerKg <= 0 || !foodId) {
       const gramsCell = document.querySelector('.grams-recommendation[data-food-id="' + foodId + '"]');
       if (gramsCell) {
         gramsCell.textContent = '—';
@@ -940,6 +941,12 @@ if (trend && trend.length > 0) {
       gramsCell.textContent = gramsPerDay.toFixed(1) + ' g';
     }
   }
+  
+  // Make function globally available for inline oninput handlers
+  window.updateGramsForFood = function(input) {
+    calculateGrams(input);
+    updateTotal();
+  };
   
   // Calculate grams and total for all inputs on page load
   dietInputs.forEach(function(input) {
