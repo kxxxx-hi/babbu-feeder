@@ -812,6 +812,28 @@ def ensure_image_public_url(image_url: Optional[str]) -> Optional[str]:
                     pass
                 return f"https://storage.googleapis.com/{storage_manager.bucket_name}/{blob_key}"
         
+        # Try to find the image if URL contains the filename
+        # Handle cases where URL might be partial or in different format
+        if image_url and not image_url.startswith("http"):
+            # Try with cat_images/ prefix
+            blob_key = f"cat_images/{image_url}" if not image_url.startswith("cat_images/") else image_url
+            blob = storage_manager.bucket.blob(blob_key)
+            if blob.exists():
+                try:
+                    blob.make_public()
+                except:
+                    pass
+                return f"https://storage.googleapis.com/{storage_manager.bucket_name}/{blob_key}"
+            # Try without prefix (in case it's stored at root)
+            blob_key = image_url
+            blob = storage_manager.bucket.blob(blob_key)
+            if blob.exists():
+                try:
+                    blob.make_public()
+                except:
+                    pass
+                return f"https://storage.googleapis.com/{storage_manager.bucket_name}/{blob_key}"
+        
         return image_url
     except Exception as e:
         print(f"Error ensuring image is public: {e}")
@@ -1565,6 +1587,43 @@ def send_daily_email():
             "message": "Some emails failed to send",
             "results": results
         }), 500
+
+@app.route("/api/fix-image-url", methods=["GET", "POST"])
+def fix_image_url():
+    """Debug endpoint to fix image URL for a cat"""
+    cat_id = request.args.get("cat_id") or request.form.get("cat_id")
+    if not cat_id:
+        return jsonify({"error": "cat_id parameter required"}), 400
+    
+    try:
+        cat_id = int(cat_id)
+        cat_data = get_cat(cat_id)
+        if not cat_data:
+            return jsonify({"error": f"Cat {cat_id} not found"}), 404
+        
+        old_url = cat_data.get("profile_pic_url")
+        new_url = ensure_image_public_url(old_url)
+        
+        # Update the cat data if URL changed
+        if new_url != old_url:
+            cat_data["profile_pic_url"] = new_url
+            save_cat(cat_data)
+            return jsonify({
+                "success": True,
+                "cat_id": cat_id,
+                "old_url": old_url,
+                "new_url": new_url,
+                "message": "Image URL fixed and saved"
+            })
+        else:
+            return jsonify({
+                "success": True,
+                "cat_id": cat_id,
+                "url": old_url,
+                "message": "Image URL is already correct"
+            })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 @app.route("/api/cron-status", methods=["GET"])
 def cron_status():
