@@ -1,277 +1,162 @@
 import os
 import json
-import requests
 from typing import Optional, Dict, Any, List
 
-class VercelBlobStorage:
-    """Storage manager using Vercel Blob Storage HTTP API"""
+class GCSStorage:
+    """Storage manager using Google Cloud Storage"""
     
     def __init__(self):
-        self.token = os.getenv("BLOB_READ_WRITE_TOKEN")
-        # Vercel Blob API endpoint
-        self.base_url = "https://blob.vercel-storage.com"
+        self.bucket_name = os.getenv("GCS_BUCKET_NAME")
+        if not self.bucket_name:
+            raise ValueError("GCS_BUCKET_NAME environment variable is not set")
         
-    def _get_headers(self) -> Dict[str, str]:
-        """Get headers for API requests"""
-        if not self.token:
-            raise ValueError("BLOB_READ_WRITE_TOKEN environment variable is not set")
-        return {
-            "Authorization": f"Bearer {self.token}",
-        }
+        # Initialize GCS client
+        try:
+            from google.cloud import storage
+            from google.oauth2 import service_account
+            
+            # Get service account JSON from environment variable
+            service_account_json_str = os.getenv("GCP_SERVICE_ACCOUNT_JSON")
+            if not service_account_json_str:
+                raise ValueError("GCP_SERVICE_ACCOUNT_JSON environment variable is not set")
+            
+            # Parse the JSON string
+            try:
+                service_account_info = json.loads(service_account_json_str)
+            except json.JSONDecodeError:
+                # If it's already a dict (shouldn't happen but handle it)
+                if isinstance(service_account_json_str, dict):
+                    service_account_info = service_account_json_str
+                else:
+                    raise ValueError("GCP_SERVICE_ACCOUNT_JSON is not valid JSON")
+            
+            # Create credentials from service account info
+            credentials = service_account.Credentials.from_service_account_info(
+                service_account_info
+            )
+            
+            # Initialize storage client
+            self.client = storage.Client(credentials=credentials, project=service_account_info.get("project_id"))
+            self.bucket = self.client.bucket(self.bucket_name)
+            
+            print(f"GCS Storage initialized successfully with bucket: {self.bucket_name}")
+        except ImportError:
+            raise ImportError("google-cloud-storage library not installed. Install with: pip install google-cloud-storage")
+        except Exception as e:
+            print(f"Error initializing GCS Storage: {e}")
+            import traceback
+            traceback.print_exc()
+            raise
     
     def read_json(self, key: str) -> Dict[str, Any]:
-        """Read JSON data from Vercel Blob Storage - handles Vercel's blob naming with suffixes"""
+        """Read JSON data from Google Cloud Storage"""
         try:
-            if not self.token:
-                print("Warning: BLOB_READ_WRITE_TOKEN not set, returning empty data")
+            blob = self.bucket.blob(key)
+            
+            if not blob.exists():
+                print(f"Blob {key} does not exist in GCS")
                 return {}
             
-            headers = self._get_headers()
-            
-            # First, try direct GET with exact key
-            get_url = f"{self.base_url}/{key}"
-            get_response = requests.get(get_url, headers=headers, timeout=10)
-            
-            if get_response.status_code == 200:
-                try:
-                    data = get_response.json()
-                    # If it's a blob metadata response with a URL, fetch the actual content
-                    if isinstance(data, dict) and 'url' in data and 'pathname' not in data:
-                        blob_url = data['url']
-                        content_response = requests.get(blob_url, timeout=10)
-                        if content_response.status_code == 200:
-                            return content_response.json()
-                    # Otherwise return the JSON directly
-                    return data
-                except json.JSONDecodeError:
-                    return {}
-            
-            # If direct GET failed, try listing blobs with prefix to find the actual blob name
-            # Vercel adds suffixes like "data/cat_1-76udXzISNAw3ujt1sYxLI8g46URz0M"
-            if get_response.status_code == 404:
-                print(f"Blob {key} not found directly, trying prefix search...")
-                # List blobs with the prefix
-                blobs = self.list_blobs(prefix=key)
-                if blobs:
-                    print(f"Found {len(blobs)} blobs with prefix '{key}'")
-                else:
-                    print(f"No blobs returned for prefix '{key}'")
-                    
-                # Find exact match or closest match (blob name starting with key)
-                # Prefer exact matches, then suffix matches
-                # IMPORTANT: When multiple blobs match, use the most recent one (by uploadedAt)
-                matching_blobs = []
-                suffix_matches = []
+            # Download and parse JSON
+            content = blob.download_as_text()
+            try:
+                data = json.loads(content)
+                print(f"Successfully read JSON from GCS: {key}")
+                return data
+            except json.JSONDecodeError as e:
+                print(f"Error parsing JSON from GCS blob {key}: {e}")
+                return {}
                 
-                for blob in blobs:
-                    pathname = blob.get("pathname", "")
-                    # Debug
-                    print(f"  -> candidate blob pathname: {pathname}, uploadedAt: {blob.get('uploadedAt', 'unknown')}")
-                    # Check for exact match first
-                    if pathname == key:
-                        matching_blobs.append(blob)
-                        print(f"Found exact match: {pathname}")
-                    # Check if pathname starts with key followed by "-" (handles Vercel suffixes)
-                    # e.g., "data/cat_1" matches "data/cat_1-76udXzISNAw3ujt1sYxLI8g46URz0M"
-                    elif pathname.startswith(key + "-"):
-                        suffix_matches.append(blob)
-                        print(f"Found blob with suffix: {pathname}")
-                    # Also check for directory-style (key + "/")
-                    elif pathname.startswith(key + "/"):
-                        suffix_matches.append(blob)
-                        print(f"Found blob in subdirectory: {pathname}")
-                
-                # Select the most recent blob (by uploadedAt timestamp)
-                matching_blob = None
-                if matching_blobs:
-                    # Sort by uploadedAt descending (most recent first)
-                    matching_blobs.sort(key=lambda x: x.get("uploadedAt", ""), reverse=True)
-                    matching_blob = matching_blobs[0]
-                    print(f"Using most recent exact match: {matching_blob.get('pathname')} (uploadedAt: {matching_blob.get('uploadedAt')})")
-                elif suffix_matches:
-                    # Sort by uploadedAt descending (most recent first)
-                    suffix_matches.sort(key=lambda x: x.get("uploadedAt", ""), reverse=True)
-                    matching_blob = suffix_matches[0]
-                    print(f"Using most recent suffix match: {matching_blob.get('pathname')} (uploadedAt: {matching_blob.get('uploadedAt')})")
-                    
-                if matching_blob:
-                    print(f"Matched blob metadata: {matching_blob}")
-                    # Get the URL and fetch content
-                    blob_url = matching_blob.get("url")
-                    # Some responses include downloadUrl instead of url
-                    if not blob_url:
-                        blob_url = matching_blob.get("downloadUrl")
-                    if blob_url:
-                        try:
-                            content_response = requests.get(blob_url, timeout=10)
-                            if content_response.status_code == 200:
-                                try:
-                                    data = content_response.json()
-                                    print(f"Successfully read JSON from blob {matching_blob.get('pathname')} via public URL")
-                                    return data
-                                except json.JSONDecodeError as e:
-                                    print(f"Error parsing JSON from blob {blob_url}: {e}")
-                                    print(f"Response text (first 500 chars): {content_response.text[:500]}")
-                                    return {}
-                            else:
-                                print(f"Failed to fetch blob content from {blob_url}: HTTP {content_response.status_code}")
-                                print(f"Response preview: {content_response.text[:200]}")
-                        except Exception as fetch_err:
-                            print(f"Error fetching blob content from {blob_url}: {fetch_err}")
-                    else:
-                        print(f"No URL found in blob metadata: {matching_blob}")
-                else:
-                    print(f"No blob found with prefix '{key}' (searched {len(blobs)} blobs)")
-                    if blobs:
-                        print(f"Available blobs: {[b.get('pathname') for b in blobs[:5]]}")
-            
-            # Blob doesn't exist
-            return {}
-                
-        except requests.exceptions.RequestException as e:
-            print(f"Network error reading from Vercel Blob: {e}")
-            return {}
         except Exception as e:
-            print(f"Error reading from Vercel Blob: {e}")
+            print(f"Error reading from GCS: {e}")
             import traceback
             traceback.print_exc()
             return {}
     
     def write_json(self, data: Dict[str, Any], key: str) -> bool:
-        """Write JSON data to Vercel Blob Storage. Returns True if successful, False otherwise."""
+        """Write JSON data to Google Cloud Storage. Returns True if successful, False otherwise."""
         try:
-            if not self.token:
-                print("Warning: BLOB_READ_WRITE_TOKEN not set, cannot save data")
-                return False
-            
-            # Delete any existing blobs with the same prefix to avoid duplicates
-            # Vercel Blob Storage may create blobs with suffixes, so we need to clean up old ones
-            existing_blobs = self.list_blobs(prefix=key)
-            for blob in existing_blobs:
-                pathname = blob.get("pathname", "")
-                # Delete blobs that match the key exactly or start with key + "-" (Vercel suffix pattern)
-                if pathname == key or pathname.startswith(key + "-"):
-                    print(f"Deleting old blob before write: {pathname}")
-                    self.delete_blob(pathname)
-            
             # Convert data to JSON string
             json_data = json.dumps(data, indent=2)
             
-            # Use PUT to upload the blob
-            # Format: PUT https://blob.vercel-storage.com/{pathname}
-            put_url = f"{self.base_url}/{key}"
-            headers = {
-                "Authorization": f"Bearer {self.token}",
-                "Content-Type": "application/json",
-            }
+            # Upload to GCS
+            blob = self.bucket.blob(key)
+            blob.upload_from_string(json_data, content_type='application/json')
             
-            response = requests.put(put_url, headers=headers, data=json_data.encode('utf-8'), timeout=10)
-            
-            if response.status_code in [200, 201]:
-                result = response.json()
-                print(f"Successfully saved {key} to Vercel Blob: {result.get('url', 'N/A')}")
-                return True
-            else:
-                print(f"Error saving to Vercel Blob: HTTP {response.status_code}")
-                print(f"Response: {response.text}")
-                return False
-        except requests.exceptions.RequestException as e:
-            print(f"Network error writing to Vercel Blob: {e}")
-            return False
+            print(f"Successfully saved {key} to GCS bucket {self.bucket_name}")
+            return True
         except Exception as e:
-            print(f"Error writing to Vercel Blob: {e}")
+            print(f"Error writing to GCS: {e}")
             import traceback
             traceback.print_exc()
             return False
     
     def delete_blob(self, key: str) -> bool:
-        """Delete a blob from Vercel Blob Storage"""
+        """Delete a blob from Google Cloud Storage"""
         try:
-            if not self.token:
-                print("Warning: BLOB_READ_WRITE_TOKEN not set, cannot delete blob")
-                return False
-            
-            headers = self._get_headers()
-            delete_url = f"{self.base_url}/{key}"
-            response = requests.delete(delete_url, headers=headers, timeout=10)
-            
-            if response.status_code in [200, 204]:
-                print(f"Successfully deleted blob: {key}")
+            blob = self.bucket.blob(key)
+            if blob.exists():
+                blob.delete()
+                print(f"Successfully deleted blob from GCS: {key}")
                 return True
             else:
-                print(f"Error deleting blob {key}: HTTP {response.status_code}")
+                print(f"Blob {key} does not exist in GCS")
                 return False
         except Exception as e:
-            print(f"Error deleting blob: {e}")
+            print(f"Error deleting blob from GCS: {e}")
             return False
     
     def list_blobs(self, prefix: str = "", limit: int = 100) -> List[Dict[str, Any]]:
-        """List blobs by sending GET requests with prefix parameters"""
+        """List blobs in GCS with optional prefix"""
         try:
-            if not self.token:
-                return []
-            
-            headers = self._get_headers()
-            params = {"prefix": prefix, "limit": limit}
-            response = requests.get(self.base_url, headers=headers, params=params, timeout=10)
-            
-            if response.status_code == 200:
-                result = response.json()
-                blobs = result.get("blobs", [])
-                if prefix:
-                    print(f"list_blobs('{prefix}') -> {len(blobs)} blobs")
-                return blobs
-            else:
-                print(f"list_blobs error HTTP {response.status_code}: {response.text[:200]}")
-            return []
+            blobs = self.bucket.list_blobs(prefix=prefix, max_results=limit)
+            result = []
+            for blob in blobs:
+                result.append({
+                    "pathname": blob.name,
+                    "size": blob.size,
+                    "updated": blob.updated.isoformat() if blob.updated else None,
+                    "url": blob.public_url if blob.public_url else None
+                })
+            return result
         except Exception as e:
-            print(f"Error listing blobs: {e}")
-            import traceback
-            traceback.print_exc()
+            print(f"Error listing blobs from GCS: {e}")
             return []
     
     def purge_all_data(self):
-        """Delete all application data blobs (old root-level and new data/ directory, but keep images)"""
+        """Delete all application data blobs (but keep images)"""
         try:
-            if not self.token:
-                print("Warning: BLOB_READ_WRITE_TOKEN not set, cannot purge data")
-                return 0
+            # List all blobs with data/ prefix
+            data_blobs = self.bucket.list_blobs(prefix="data/")
             
-            # List all blobs
-            all_blobs = self.list_blobs()
-            
-            # Delete data blobs (not images)
             deleted_count = 0
-            for blob in all_blobs:
-                pathname = blob.get("pathname", "")
-                if not pathname:
-                    continue
-                
+            for blob in data_blobs:
                 # Keep cat_images directory
-                if pathname.startswith("cat_images/"):
+                if blob.name.startswith("data/cat_images/"):
                     continue
                 
-                # Delete old root-level data files (cats, cat_*, foods)
-                # and new data/ directory files
-                if (pathname.startswith("data/") or 
-                    pathname == "cats" or 
-                    pathname.startswith("cat_") or 
-                    pathname == "foods" or
-                    pathname.startswith("foods-") or
-                    pathname.startswith("cats-") or
-                    (pathname.startswith("cat_") and "-" in pathname)):
-                    if self.delete_blob(pathname):
-                        deleted_count += 1
-                        print(f"Deleted: {pathname}")
+                # Delete data files
+                blob.delete()
+                deleted_count += 1
+                print(f"Deleted: {blob.name}")
             
-            print(f"Purged {deleted_count} data blobs")
+            # Also check for old root-level files (for migration cleanup)
+            old_prefixes = ["cats", "cat_", "foods"]
+            for prefix in old_prefixes:
+                blobs = self.bucket.list_blobs(prefix=prefix)
+                for blob in blobs:
+                    if not blob.name.startswith("data/"):
+                        blob.delete()
+                        deleted_count += 1
+                        print(f"Deleted old format: {blob.name}")
+            
+            print(f"Purged {deleted_count} data blobs from GCS")
             return deleted_count
         except Exception as e:
-            print(f"Error purging data: {e}")
+            print(f"Error purging data from GCS: {e}")
             import traceback
             traceback.print_exc()
             return 0
 
-# For backward compatibility, use VercelBlobStorage as CloudStorageManager
-CloudStorageManager = VercelBlobStorage
-
+# Use GCSStorage as CloudStorageManager
+CloudStorageManager = GCSStorage

@@ -20,14 +20,14 @@ except ImportError:
 # Load environment variables
 load_dotenv()
 
-# Import Vercel Blob storage manager
+# Import Google Cloud Storage manager
 try:
     from .storage import CloudStorageManager
     storage_manager = CloudStorageManager()
     STORAGE_AVAILABLE = True
-    print("Vercel Blob Storage initialized successfully")
+    print("Google Cloud Storage initialized successfully")
 except Exception as e:
-    print(f"Warning: Vercel Blob Storage not available: {e}")
+    print(f"Warning: Google Cloud Storage not available: {e}")
     import traceback
     traceback.print_exc()
     STORAGE_AVAILABLE = False
@@ -440,7 +440,7 @@ def kcal_split(total_kcal: float, meals_per_day: int, diet_list: List[dict], foo
     
     return pd.DataFrame(out), warnings
 
-# ---------- Vercel Blob Data helpers - Multiple Cats Support ----------
+# ---------- Google Cloud Storage Data helpers - Multiple Cats Support ----------
 # Storage structure (organized in data/ directory):
 # - data/cats.json: {cats: [{id, name, birthday, profile_pic_url, created_at}]}
 # - data/cat_{id}.json: {id, name, birthday, profile_pic_url, meals_per_day, life_stage_override, weights: [], diet: [], meals: []}
@@ -612,7 +612,7 @@ def save_weight(cat_id: int, weight_dt: str, weight_kg: float) -> bool:
         return False
 
 def get_foods():
-    """Get foods from Vercel Blob Storage"""
+    """Get foods from Google Cloud Storage"""
     if not STORAGE_AVAILABLE:
         return []
     try:
@@ -632,7 +632,7 @@ def get_foods():
         return []
 
 def save_food(food_data: dict):
-    """Save food to Vercel Blob Storage"""
+    """Save food to Google Cloud Storage"""
     if not STORAGE_AVAILABLE:
         return
     try:
@@ -655,7 +655,7 @@ def save_food(food_data: dict):
         traceback.print_exc()
 
 def delete_food(food_id: int):
-    """Delete food from Vercel Blob Storage"""
+    """Delete food from Google Cloud Storage"""
     if not STORAGE_AVAILABLE:
         return
     try:
@@ -772,12 +772,14 @@ def get_meals(cat_id: int):
         print(f"Error reading meals: {e}")
         return []
 
-# Helper function to upload image to Vercel Blob
+# Helper function to upload image to Google Cloud Storage
 def upload_image_to_blob(file, filename: str) -> Optional[str]:
-    """Upload image file to Vercel Blob and return URL"""
+    """Upload image file to Google Cloud Storage and return public URL"""
     if not STORAGE_AVAILABLE or not file:
         return None
     try:
+        from google.cloud import storage
+        
         # Read file content
         file_content = file.read()
         # Determine content type
@@ -787,30 +789,18 @@ def upload_image_to_blob(file, filename: str) -> Optional[str]:
         elif filename.lower().endswith('.gif'):
             content_type = "image/gif"
         
-        # Upload to Vercel Blob
+        # Upload to GCS
         blob_key = f"cat_images/{filename}"
-        token = storage_manager.token
-        if not token:
-            print("No blob token available")
-            return None
-        headers = {
-            "Authorization": f"Bearer {token}",
-            "Content-Type": content_type,
-        }
-        response = requests.put(
-            f"{storage_manager.base_url}/{blob_key}",
-            headers=headers,
-            data=file_content,
-            timeout=30
-        )
+        blob = storage_manager.bucket.blob(blob_key)
+        blob.upload_from_string(file_content, content_type=content_type)
         
-        if response.status_code in [200, 201]:
-            result = response.json()
-            return result.get("url")
-        else:
-            print(f"Error uploading image: HTTP {response.status_code}")
-            print(f"Response: {response.text[:200]}")
-            return None
+        # Make blob publicly accessible
+        blob.make_public()
+        
+        # Return public URL
+        public_url = blob.public_url
+        print(f"Successfully uploaded image to GCS: {blob_key}")
+        return public_url
     except Exception as e:
         print(f"Error uploading image: {e}")
         import traceback
@@ -828,7 +818,7 @@ def home():
     current_tab = request.args.get("tab", "dash")
     if not STORAGE_AVAILABLE:
         return render_template("index.html", 
-            error="Vercel Blob Storage not configured. Please set up BLOB_READ_WRITE_TOKEN environment variable.",
+            error="Google Cloud Storage not configured. Please set up GCS_BUCKET_NAME and GCP_SERVICE_ACCOUNT_JSON environment variables.",
             cats=[], selected_cat=None, age_weeks=0, stage="", latest_w=None, daily_kcal=None,
             weights_list=[], per_meal=[], foods=[], diet_map={}, total_pct=0.0, trend=[])
     

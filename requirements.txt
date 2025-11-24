@@ -3,3 +3,4 @@ pandas==2.2.3
 python-dotenv==1.0.1
 requests==2.31.0
 sendgrid==6.11.0
+google-cloud-storage==2.14.0
