@@ -533,7 +533,8 @@
                         <input class="form-control form-control-sm diet-pct-input" type="number" step="1" min="0" max="100"
                                name="diet_pct_{{ f.id }}" value="{{ diet_map.get(f.id, 0)|int }}" 
                                data-food-id="{{ f.id }}" data-kcal-per-kg="{{ f.kcal_per_kg or 0 }}" 
-                               {% if total_pct == 100 %}disabled{% endif %} required>
+                               {% if total_pct == 100 %}disabled{% endif %} 
+                               oninput="updateGramsForFood(this)" required>
                       </td>
                       <td class="kmono grams-recommendation small" data-food-id="{{ f.id }}">
                         {% if grams_recommendations.get(f.id) %}
