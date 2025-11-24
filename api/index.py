@@ -570,15 +570,21 @@ def save_weight(cat_id: int, weight_dt: str, weight_kg: float) -> bool:
         return False
     try:
         print(f"Attempting to save weight for cat {cat_id}: {weight_kg} kg on {weight_dt}")
-        data = get_cat(cat_id)
+        # Use force_refresh to get the latest data from GCS
+        data = get_cat(cat_id, force_refresh=True)
         if not data:
             print(f"Cat {cat_id} not found, cannot save weight")
             return False
         weights = data.get("weights", [])
-        print(f"Current weights count: {len(weights)}")
+        print(f"Current weights count before save: {len(weights)}")
+        print(f"Current weights: {weights}")
         
-        # Remove existing entry for this date if exists
+        # Remove existing entry for this date if exists (to avoid duplicates)
+        original_count = len(weights)
         weights = [w for w in weights if w.get("dt") != weight_dt]
+        removed_count = original_count - len(weights)
+        if removed_count > 0:
+            print(f"Removed {removed_count} existing entry(ies) for date {weight_dt}")
         
         # Add new entry
         weights.append({
@@ -589,32 +595,48 @@ def save_weight(cat_id: int, weight_dt: str, weight_kg: float) -> bool:
         # Sort by date
         weights = sorted(weights, key=lambda x: x.get("dt", ""))
         data["weights"] = weights
-        print(f"Saving {len(weights)} weight entries for cat {cat_id}")
+        print(f"Saving {len(weights)} weight entries for cat {cat_id} (added 1 new entry)")
+        print(f"Weights to save: {weights}")
         
         # Write and verify success
         success = storage_manager.write_json(data, f"data/cat_{cat_id}")
         if success:
-            # Small delay to account for GCS eventual consistency
+            print(f"Write to GCS succeeded for cat {cat_id}")
+            # Longer delay to account for GCS eventual consistency
             import time
-            time.sleep(0.5)
+            time.sleep(1.0)  # Increased from 0.5 to 1.0 seconds
             
-            # Verify the write by reading it back with force refresh
-            verify_data = storage_manager.read_json(f"data/cat_{cat_id}", force_refresh=True)
-            if verify_data:
-                verify_weights = verify_data.get("weights", [])
-                if len(verify_weights) == len(weights):
-                    print(f"Successfully saved and verified weight for cat {cat_id}")
-                    return True
+            # Verify the write by reading it back with force refresh (multiple attempts)
+            max_attempts = 3
+            for attempt in range(1, max_attempts + 1):
+                verify_data = storage_manager.read_json(f"data/cat_{cat_id}", force_refresh=True)
+                if verify_data:
+                    verify_weights = verify_data.get("weights", [])
+                    print(f"Verification attempt {attempt}: Found {len(verify_weights)} weights in saved data")
+                    if len(verify_weights) == len(weights):
+                        print(f"Successfully saved and verified weight for cat {cat_id}: {len(weights)} entries")
+                        return True
+                    elif attempt < max_attempts:
+                        # Wait a bit longer and try again
+                        print(f"Verification mismatch, waiting and retrying...")
+                        time.sleep(0.5)
+                    else:
+                        print(f"Warning: Weight save verification - expected {len(weights)} weights, got {len(verify_weights)}")
+                        print(f"Expected weights: {weights}")
+                        print(f"Saved weights: {verify_weights}")
+                        # Still return True if write succeeded, verification is just a check
+                        return True
                 else:
-                    print(f"Warning: Weight save verification - expected {len(weights)} weights, got {len(verify_weights)}")
-                    # Still return True if write succeeded, verification is just a check
-                    return True
-            else:
-                print(f"Warning: Could not verify weight save - read returned empty data")
-                # Still return True if write succeeded
-                return True
+                    if attempt < max_attempts:
+                        print(f"Verification read returned empty, retrying...")
+                        time.sleep(0.5)
+                    else:
+                        print(f"Warning: Could not verify weight save - read returned empty data after {max_attempts} attempts")
+                        # Still return True if write succeeded
+                        return True
+            return True
         else:
-            print(f"Error: Failed to save weight for cat {cat_id}")
+            print(f"Error: Failed to save weight for cat {cat_id} - write_json returned False")
             return False
     except Exception as e:
         print(f"Error saving weight: {e}")
