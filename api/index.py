@@ -729,12 +729,12 @@ def delete_food(food_id: int):
         import traceback
         traceback.print_exc()
 
-def get_diet(cat_id: int):
+def get_diet(cat_id: int, force_refresh: bool = False):
     """Get diet plan for a specific cat"""
     if not STORAGE_AVAILABLE:
         return []
     try:
-        data = get_cat(cat_id)
+        data = get_cat(cat_id, force_refresh=force_refresh)
         if not data:
             return []
         return data.get("diet", [])
@@ -1181,12 +1181,15 @@ def home():
                 if success:
                     print(f"Diet plan saved successfully for cat {cat_id}")
                 else:
-                    print(f"Warning: Diet save may have failed for cat {cat_id}")
+                    print(f"Error: Diet save failed for cat {cat_id}")
+                    tab = request.form.get("current_tab", "diet")
+                    return redirect(url_for("home", cat_id=cat_id, tab=tab, error="diet_save_failed"))
             else:
                 print(f"Error: Diet plan total is {total}%, must be exactly 100%")
             tab = request.form.get("current_tab", "diet")
             print(f"Redirecting to home with cat_id={cat_id}, tab={tab}")
-            return redirect(url_for("home", cat_id=cat_id, tab=tab))
+            # Add refresh parameter to force fresh data read
+            return redirect(url_for("home", cat_id=cat_id, tab=tab, _refresh="1"))
         except Exception as e:
             print(f"Error in save_diet: {e}")
             import traceback
@@ -1232,7 +1235,7 @@ def home():
     force_refresh = request.args.get("_refresh") == "1"
     weights_list = get_weights(cat_id, force_refresh=force_refresh) if cat_id else []
     foods_list = get_foods(force_refresh=force_refresh)
-    diet_list = get_diet(cat_id) if cat_id else []
+    diet_list = get_diet(cat_id, force_refresh=force_refresh) if cat_id else []
 
     # Convert to DataFrames for compatibility
     weights_df = pd.DataFrame(weights_list) if weights_list else pd.DataFrame(columns=["dt", "weight_kg"])
