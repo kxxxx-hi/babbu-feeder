@@ -238,9 +238,9 @@
             </form>
           </span>
         </div>
-        <div class="row g-3">
-          <div class="col-md-3">
-            <div class="stat-card">
+        <div class="row g-3 align-items-stretch">
+          <div class="col-md-3 d-flex">
+            <div class="stat-card h-100 w-100">
               <div class="stat-label">Latest Weight</div>
               <div class="stat-value kmono">{{ "%.2f"|format(latest_w) if latest_w else "—" }} kg</div>
               {% if latest_weight_days_ago is not none %}
@@ -250,15 +250,15 @@
               {% endif %}
             </div>
           </div>
-          <div class="col-md-3">
-            <div class="stat-card">
+          <div class="col-md-3 d-flex">
+            <div class="stat-card h-100 w-100">
               <div class="stat-label">Daily Target kcal</div>
               <div class="stat-value kmono">{{ "%.0f"|format(daily_kcal) if daily_kcal else "—" }} kcal</div>
               <span id="daily-kcal-value" style="display: none;">{{ daily_kcal if daily_kcal else 0 }}</span>
             </div>
           </div>
-          <div class="col-md-3">
-            <div class="stat-card">
+          <div class="col-md-3 d-flex">
+            <div class="stat-card h-100 w-100">
               <div class="stat-label">Meals Per Day</div>
               <div class="stat-value kmono">{{ selected_cat.meals_per_day }}</div>
             </div>
