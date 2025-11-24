@@ -243,6 +243,11 @@
             <div class="stat-card">
               <div class="stat-label">Latest Weight</div>
               <div class="stat-value kmono">{{ "%.2f"|format(latest_w) if latest_w else "—" }} kg</div>
+              {% if latest_weight_days_ago is not none %}
+              <div class="stat-subtext" style="font-size: 0.75em; color: #6c757d; margin-top: 4px;">
+                {{ latest_weight_days_ago }} day{{ "s" if latest_weight_days_ago != 1 else "" }} ago
+              </div>
+              {% endif %}
             </div>
           </div>
           <div class="col-md-3">

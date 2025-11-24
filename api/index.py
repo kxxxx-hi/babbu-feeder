@@ -1290,8 +1290,18 @@ def home():
     stage_display = format_life_stage(stage)
 
     latest_w = None
+    latest_weight_days_ago = None
     if not weights_df.empty:
         latest_w = float(weights_df.iloc[-1]["weight_kg"])
+        # Calculate days since latest weight
+        try:
+            latest_weight_date_str = weights_df.iloc[-1]["dt"]
+            latest_weight_date = date.fromisoformat(latest_weight_date_str)
+            days_diff = (date.today() - latest_weight_date).days
+            latest_weight_days_ago = days_diff
+        except Exception as e:
+            print(f"Error calculating days since latest weight: {e}")
+            latest_weight_days_ago = None
     
     # Calculate daily kcal - use actual weight if available, otherwise estimate based on age
     if latest_w:
@@ -1356,6 +1366,7 @@ def home():
         stage=stage,
         stage_display=stage_display,
         latest_w=latest_w,
+        latest_weight_days_ago=latest_weight_days_ago,
         daily_kcal=daily_kcal,
         weights_list=weights_list,
         per_meal=per_meal.to_dict(orient="records"),
