@@ -48,10 +48,22 @@ class GCSStorage:
             traceback.print_exc()
             raise
     
-    def read_json(self, key: str) -> Dict[str, Any]:
-        """Read JSON data from Google Cloud Storage"""
+    def read_json(self, key: str, force_refresh: bool = False) -> Dict[str, Any]:
+        """Read JSON data from Google Cloud Storage
+        
+        Args:
+            key: The blob key/path in GCS
+            force_refresh: If True, reloads the blob metadata before reading (helps with eventual consistency)
+        """
         try:
             blob = self.bucket.blob(key)
+            
+            # Force refresh blob metadata to get latest version
+            if force_refresh:
+                try:
+                    blob.reload()
+                except:
+                    pass  # If reload fails, continue anyway
             
             if not blob.exists():
                 print(f"Blob {key} does not exist in GCS")

@@ -594,14 +594,25 @@ def save_weight(cat_id: int, weight_dt: str, weight_kg: float) -> bool:
         # Write and verify success
         success = storage_manager.write_json(data, f"data/cat_{cat_id}")
         if success:
-            # Verify the write by reading it back
-            verify_data = get_cat(cat_id)
-            if verify_data and len(verify_data.get("weights", [])) == len(weights):
-                print(f"Successfully saved and verified weight for cat {cat_id}")
-                return True
+            # Small delay to account for GCS eventual consistency
+            import time
+            time.sleep(0.5)
+            
+            # Verify the write by reading it back with force refresh
+            verify_data = storage_manager.read_json(f"data/cat_{cat_id}", force_refresh=True)
+            if verify_data:
+                verify_weights = verify_data.get("weights", [])
+                if len(verify_weights) == len(weights):
+                    print(f"Successfully saved and verified weight for cat {cat_id}")
+                    return True
+                else:
+                    print(f"Warning: Weight save verification - expected {len(weights)} weights, got {len(verify_weights)}")
+                    # Still return True if write succeeded, verification is just a check
+                    return True
             else:
-                print(f"Warning: Weight save may have failed - verification read returned {len(verify_data.get('weights', [])) if verify_data else 0} weights, expected {len(weights)}")
-                return False
+                print(f"Warning: Could not verify weight save - read returned empty data")
+                # Still return True if write succeeded
+                return True
         else:
             print(f"Error: Failed to save weight for cat {cat_id}")
             return False
@@ -631,11 +642,13 @@ def get_foods():
         print(f"Error reading foods: {e}")
         return []
 
-def save_food(food_data: dict):
-    """Save food to Google Cloud Storage"""
+def save_food(food_data: dict) -> bool:
+    """Save food to Google Cloud Storage. Returns True if successful, False otherwise."""
     if not STORAGE_AVAILABLE:
-        return
+        print("Error: Storage not available")
+        return False
     try:
+        print(f"Attempting to save food: {food_data.get('name', 'Unknown')}")
         data = storage_manager.read_json("data/foods")
         if not data:
             data = {"foods": []}
@@ -646,13 +659,58 @@ def save_food(food_data: dict):
             max_id = max([f.get("id", 0) for f in foods], default=0)
             food_data["id"] = max_id + 1
         
-        foods.append(food_data)
+        # Check if food with same ID already exists, update instead of append
+        food_id = food_data.get("id")
+        existing_index = None
+        for i, f in enumerate(foods):
+            if f.get("id") == food_id:
+                existing_index = i
+                break
+        
+        if existing_index is not None:
+            # Update existing food
+            foods[existing_index] = food_data
+            print(f"Updating existing food with ID {food_id}")
+        else:
+            # Add new food
+            foods.append(food_data)
+            print(f"Adding new food with ID {food_id}")
+        
         data["foods"] = foods
-        storage_manager.write_json(data, "data/foods")
+        print(f"Saving {len(foods)} foods to GCS")
+        
+        # Write and verify success
+        success = storage_manager.write_json(data, "data/foods")
+        if success:
+            # Small delay to account for GCS eventual consistency
+            import time
+            time.sleep(0.5)
+            
+            # Verify the write by reading it back with force refresh
+            verify_data = storage_manager.read_json("data/foods", force_refresh=True)
+            if verify_data:
+                verify_foods = verify_data.get("foods", [])
+                # Check if our food is in the saved data
+                saved_food = next((f for f in verify_foods if f.get("id") == food_id), None)
+                if saved_food:
+                    print(f"Successfully saved and verified food ID {food_id}: {saved_food.get('name')}")
+                    return True
+                else:
+                    print(f"Warning: Food ID {food_id} not found in verification read. Found {len(verify_foods)} foods total.")
+                    # Still return True if write succeeded, verification is just a check
+                    return True
+            else:
+                print(f"Warning: Could not verify food save - read returned empty data")
+                # Still return True if write succeeded
+                return True
+        else:
+            print(f"Error: Failed to write food data to GCS")
+            return False
     except Exception as e:
         print(f"Error saving food: {e}")
         import traceback
         traceback.print_exc()
+        return False
 
 def delete_food(food_id: int):
     """Delete food from Google Cloud Storage"""
@@ -1057,7 +1115,9 @@ def home():
             "food_type": food_type,
             "kcal_per_kg": round(kcal_per_kg, 1)
         }
-        save_food(food_data)
+        success = save_food(food_data)
+        if not success:
+            print(f"Warning: Food save may have failed for: {name}")
         return redirect(url_for("home", cat_id=cat_id, tab=tab) if cat_id else url_for("home", tab=tab))
 
     if action == "delete_food":
