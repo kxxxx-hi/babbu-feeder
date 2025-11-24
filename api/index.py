@@ -793,11 +793,25 @@ def ensure_image_public_url(image_url: Optional[str]) -> Optional[str]:
                 if bucket_name == storage_manager.bucket_name:
                     blob = storage_manager.bucket.blob(blob_key)
                     if blob.exists():
-                        # Make sure it's public
+                        # Make sure it's public - try multiple methods
                         try:
+                            # Method 1: make_public()
                             blob.make_public()
-                        except:
-                            pass  # May already be public
+                            print(f"Made blob public: {blob_key}")
+                        except Exception as e1:
+                            print(f"make_public() failed for {blob_key}: {e1}")
+                            # Method 2: Check if already public, if not, set ACL
+                            try:
+                                # Reload blob to get current ACL
+                                blob.reload()
+                                # Check if public
+                                if not blob.public_url:
+                                    # Try setting ACL directly
+                                    blob.acl.all().grant_read()
+                                    blob.acl.save()
+                                    print(f"Set ACL for blob: {blob_key}")
+                            except Exception as e2:
+                                print(f"ACL setting failed for {blob_key}: {e2}")
                         return image_url
         
         # If URL is just a filename or old format, try to construct the correct URL
@@ -1118,9 +1132,19 @@ def home():
     selected_cat = None
     if cat_id:
         selected_cat = get_cat(cat_id)
-        # Fix image URL if needed
+        # Fix image URL if needed and ensure it's public
         if selected_cat and selected_cat.get("profile_pic_url"):
-            selected_cat["profile_pic_url"] = ensure_image_public_url(selected_cat.get("profile_pic_url"))
+            fixed_url = ensure_image_public_url(selected_cat.get("profile_pic_url"))
+            # If URL was fixed, save it back
+            if fixed_url != selected_cat.get("profile_pic_url"):
+                selected_cat["profile_pic_url"] = fixed_url
+                # Save the fixed URL back to database
+                try:
+                    save_cat(selected_cat)
+                except Exception as e:
+                    print(f"Warning: Could not save fixed image URL: {e}")
+            else:
+                selected_cat["profile_pic_url"] = fixed_url
     
     # If no cat selected or found, create dummy data
     if not selected_cat:
