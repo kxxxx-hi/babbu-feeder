@@ -942,9 +942,33 @@ if (trend && trend.length > 0) {
     }
   }
   
-  // Make function globally available for inline oninput handlers
+  // Make functions globally available for inline oninput handlers
   window.updateGramsForFood = function(input) {
-    calculateGrams(input);
+    // Get dailyKcal from element (in case it changed)
+    const dailyKcalElement = document.getElementById('daily-kcal-value');
+    const currentDailyKcal = dailyKcalElement ? (parseFloat(dailyKcalElement.textContent) || 0) : dailyKcal;
+    
+    const pct = parseFloat(input.value) || 0;
+    const kcalPerKg = parseFloat(input.dataset.kcalPerKg || input.getAttribute('data-kcal-per-kg')) || 0;
+    const foodId = input.dataset.foodId || input.getAttribute('data-food-id');
+    
+    if (pct <= 0 || kcalPerKg <= 0 || !foodId || currentDailyKcal <= 0) {
+      const gramsCell = document.querySelector('.grams-recommendation[data-food-id="' + foodId + '"]');
+      if (gramsCell) {
+        gramsCell.textContent = '—';
+      }
+      updateTotal();
+      return;
+    }
+    
+    // Calculate: (daily_kcal * pct / 100) * 1000 / kcal_per_kg
+    const kcalForFood = currentDailyKcal * pct / 100.0;
+    const gramsPerDay = (kcalForFood * 1000.0) / kcalPerKg;
+    
+    const gramsCell = document.querySelector('.grams-recommendation[data-food-id="' + foodId + '"]');
+    if (gramsCell) {
+      gramsCell.textContent = gramsPerDay.toFixed(1) + ' g';
+    }
     updateTotal();
   };
   
