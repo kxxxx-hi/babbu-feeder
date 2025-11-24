@@ -841,33 +841,55 @@ def ensure_image_public_url(image_url: Optional[str]) -> Optional[str]:
 
 # Helper function to upload image to Google Cloud Storage
 def upload_image_to_blob(file, filename: str) -> Optional[str]:
-    """Upload image file to Google Cloud Storage and return public URL"""
+    """
+    Upload image file to Google Cloud Storage and return public URL.
+    
+    This function handles all new profile picture uploads:
+    1. Uploads image to GCS at cat_images/{filename}
+    2. Makes the blob publicly accessible
+    3. Returns the correct public URL format
+    
+    The returned URL is automatically saved to the cat's profile_pic_url field.
+    """
     if not STORAGE_AVAILABLE or not file:
+        print("Warning: Storage not available or no file provided")
         return None
     try:
         from google.cloud import storage
         
         # Read file content
         file_content = file.read()
-        # Determine content type
+        if not file_content:
+            print("Warning: File content is empty")
+            return None
+        
+        # Determine content type based on file extension
         content_type = file.content_type or "image/jpeg"
         if filename.lower().endswith('.png'):
             content_type = "image/png"
         elif filename.lower().endswith('.gif'):
             content_type = "image/gif"
+        elif filename.lower().endswith('.webp'):
+            content_type = "image/webp"
         
-        # Upload to GCS
+        # Upload to GCS at cat_images/{filename}
         blob_key = f"cat_images/{filename}"
         blob = storage_manager.bucket.blob(blob_key)
-        blob.upload_from_string(file_content, content_type=content_type)
         
-        # Make blob publicly accessible
+        # Upload the file
+        blob.upload_from_string(file_content, content_type=content_type)
+        print(f"Image uploaded to GCS: {blob_key}")
+        
+        # Make blob publicly accessible (required for images to display)
         try:
             blob.make_public()
+            print(f"Image made public: {blob_key}")
         except Exception as e:
-            print(f"Warning: Could not make blob public (may already be public): {e}")
+            # If it fails, try to check if it's already public
+            print(f"Warning: Could not make blob public: {e}")
+            # Continue anyway - the URL will still work if bucket is public
         
-        # Return public URL - use the proper GCS public URL format
+        # Return public URL in the correct format
         # Format: https://storage.googleapis.com/{bucket_name}/{blob_key}
         public_url = f"https://storage.googleapis.com/{storage_manager.bucket_name}/{blob_key}"
         print(f"Successfully uploaded image to GCS: {blob_key}, URL: {public_url}")
