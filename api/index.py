@@ -1074,6 +1074,9 @@ def home():
     selected_cat = None
     if cat_id:
         selected_cat = get_cat(cat_id)
+        # Fix image URL if needed
+        if selected_cat and selected_cat.get("profile_pic_url"):
+            selected_cat["profile_pic_url"] = ensure_image_public_url(selected_cat.get("profile_pic_url"))
     
     # If no cat selected or found, create dummy data
     if not selected_cat:
