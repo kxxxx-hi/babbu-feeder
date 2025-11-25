@@ -2019,6 +2019,61 @@ def cron_status():
     }
     return jsonify(status)
 
+@app.route("/api/trigger-email-now", methods=["GET", "POST"])
+def trigger_email_now():
+    """Manually trigger the daily email right now. No authentication required for testing."""
+    print(f"[MANUAL TRIGGER] ========== Email triggered manually at {datetime.now().isoformat()} ==========")
+    
+    # Get recipient emails from environment (comma-separated or single email)
+    recipient_emails_str = os.getenv("DAILY_EMAIL_RECIPIENT", "")
+    if not recipient_emails_str:
+        error_msg = "DAILY_EMAIL_RECIPIENT not set"
+        print(f"[MANUAL TRIGGER ERROR] {error_msg}")
+        return jsonify({"error": error_msg}), 500
+    
+    # Parse multiple recipients (comma-separated)
+    recipient_emails = [email.strip() for email in recipient_emails_str.split(",") if email.strip()]
+    if not recipient_emails:
+        error_msg = "No valid recipient emails"
+        print(f"[MANUAL TRIGGER ERROR] {error_msg}")
+        return jsonify({"error": error_msg}), 500
+    
+    # Get cat ID from environment or default to 1
+    cat_id = int(os.getenv("DAILY_EMAIL_CAT_ID", "1"))
+    print(f"[MANUAL TRIGGER] Sending emails to {len(recipient_emails)} recipient(s) for cat {cat_id}")
+    
+    # Send email to all recipients
+    results = []
+    for recipient_email in recipient_emails:
+        print(f"[MANUAL TRIGGER] Attempting to send email to {recipient_email}")
+        error = generate_diet_plan_email(cat_id, recipient_email)
+        if error:
+            print(f"[MANUAL TRIGGER ERROR] Failed to send to {recipient_email}: {error}")
+            results.append({"email": recipient_email, "status": "error", "message": error})
+        else:
+            print(f"[MANUAL TRIGGER SUCCESS] Email sent to {recipient_email}")
+            results.append({"email": recipient_email, "status": "success"})
+    
+    # Check if all succeeded
+    all_success = all(r["status"] == "success" for r in results)
+    
+    if all_success:
+        print(f"[MANUAL TRIGGER] ========== SUCCESS: All emails sent ==========")
+        return jsonify({
+            "success": True,
+            "message": f"Emails sent to {len(recipient_emails)} recipient(s) for cat {cat_id}",
+            "results": results,
+            "triggered_at": datetime.now().isoformat()
+        })
+    else:
+        print(f"[MANUAL TRIGGER] ========== PARTIAL FAILURE: Some emails failed ==========")
+        return jsonify({
+            "success": False,
+            "message": "Some emails failed to send",
+            "results": results,
+            "triggered_at": datetime.now().isoformat()
+        }), 500
+
 @app.route("/api/test-email", methods=["GET", "POST"])
 def test_email():
     """Test endpoint to send email to a specific address."""
