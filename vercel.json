@@ -15,7 +15,7 @@
   "crons": [
     {
       "path": "/api/send-daily-email",
-      "schedule": "10 1 * * *"
+      "schedule": "20 1 * * *"
     }
   ]
 }

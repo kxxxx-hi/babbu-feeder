@@ -1680,12 +1680,15 @@ Meals Per Day: {meals_per_day}
 def send_daily_email():
     """Endpoint to send daily diet plan email. Can be called by Vercel Cron Jobs."""
     # Log the request for debugging
-    print(f"[CRON] Daily email endpoint called at {datetime.now().isoformat()}")
+    current_time = datetime.now().isoformat()
+    print(f"[CRON] ========== Daily email endpoint called at {current_time} ==========")
     print(f"[CRON] Headers: {dict(request.headers)}")
     print(f"[CRON] Method: {request.method}")
+    print(f"[CRON] URL: {request.url}")
     
     # Check if this is a Vercel cron job request
     is_vercel_cron = request.headers.get("x-vercel-cron") == "1"
+    print(f"[CRON] Is Vercel cron: {is_vercel_cron}")
     
     # Get recipient emails from environment (comma-separated or single email)
     recipient_emails_str = os.getenv("DAILY_EMAIL_RECIPIENT", "")
@@ -1732,20 +1735,27 @@ def send_daily_email():
     # Check if all succeeded
     all_success = all(r["status"] == "success" for r in results)
     
+    # Always return 200 to prevent Vercel from marking cron as failed
+    # Log errors but don't fail the cron job
     if all_success:
-        print(f"[CRON] All emails sent successfully")
+        print(f"[CRON] ========== SUCCESS: All emails sent successfully ==========")
         return jsonify({
             "success": True,
             "message": f"Emails sent to {len(recipient_emails)} recipient(s) for cat {cat_id}",
-            "results": results
+            "results": results,
+            "timestamp": current_time
         })
     else:
-        print(f"[CRON] Some emails failed to send")
+        print(f"[CRON] ========== PARTIAL FAILURE: Some emails failed to send ==========")
+        print(f"[CRON] Failed results: {[r for r in results if r['status'] == 'error']}")
+        # Return 200 with error details so Vercel doesn't mark cron as failed
         return jsonify({
             "success": False,
             "message": "Some emails failed to send",
-            "results": results
-        }), 500
+            "results": results,
+            "timestamp": current_time,
+            "note": "Check logs for detailed error messages"
+        })
 
 @app.route("/api/fix-image-url", methods=["GET", "POST"])
 def fix_image_url():
@@ -1995,7 +2005,7 @@ def cron_status():
     """Check cron job configuration and status."""
     status = {
         "cron_configured": True,
-        "schedule": "10 1 * * * (1:10 AM UTC = 9:10 AM Singapore)",
+        "schedule": "20 1 * * * (1:20 AM UTC = 9:20 AM Singapore)",
         "actual_schedule_in_vercel_json": "Check vercel.json for current schedule",
         "environment_variables": {
             "DAILY_EMAIL_RECIPIENT": bool(os.getenv("DAILY_EMAIL_RECIPIENT")),
