@@ -1727,8 +1727,8 @@ def send_daily_email():
     print(f"[CRON] Has proxy signature: {has_proxy_signature}")
     
     # Calculate delay from scheduled time
-    scheduled_utc_hour = 1  # 1:40 AM UTC
-    scheduled_utc_minute = 40
+    scheduled_utc_hour = 22  # 10:00 PM UTC
+    scheduled_utc_minute = 0
     current_dt = datetime.now()
     scheduled_today = current_dt.replace(hour=scheduled_utc_hour, minute=scheduled_utc_minute, second=0, microsecond=0)
     
@@ -1742,7 +1742,7 @@ def send_daily_email():
     delay_hours = delay_minutes / 60
     
     print(f"[CRON TIMING] Request received at: {current_time}")
-    print(f"[CRON TIMING] Scheduled time: {scheduled_today.isoformat()} (9:40 AM SGT = 1:40 AM UTC)")
+    print(f"[CRON TIMING] Scheduled time: {scheduled_today.isoformat()} (6:00 AM SGT = 10:00 PM UTC)")
     print(f"[CRON TIMING] Delay: {delay_hours:.2f} hours ({delay_minutes:.1f} minutes)")
     
     # Get recipient emails from environment (comma-separated or single email)
@@ -1808,7 +1808,7 @@ def send_daily_email():
             "timestamp": current_time,
             "completed_at": end_time,
             "total_duration_seconds": round(total_duration, 2),
-            "scheduled_time": "9:40 AM SGT (1:40 AM UTC)"
+            "scheduled_time": "6:00 AM SGT (10:00 PM UTC)"
         })
     else:
         print(f"[CRON] ========== PARTIAL FAILURE: Some emails failed to send ==========")
@@ -2074,7 +2074,7 @@ def cron_status():
     """Check cron job configuration and status."""
     status = {
         "cron_configured": True,
-        "schedule": "40 1 * * * (1:40 AM UTC = 9:40 AM Singapore)",
+        "schedule": "0 22 * * * (10:00 PM UTC = 6:00 AM Singapore)",
         "actual_schedule_in_vercel_json": "Check vercel.json for current schedule",
         "environment_variables": {
             "DAILY_EMAIL_RECIPIENT": bool(os.getenv("DAILY_EMAIL_RECIPIENT")),
