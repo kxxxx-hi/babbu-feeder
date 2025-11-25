@@ -1,5 +1,6 @@
 import math
 import os
+import time
 from datetime import date, datetime
 from typing import Optional, Tuple, List
 
@@ -1398,6 +1399,8 @@ def purge_data():
 
 def generate_diet_plan_email(cat_id: int, recipient_email: str) -> Optional[str]:
     """Generate and send daily diet plan email for a cat. Returns error message if failed, None if success."""
+    email_func_start = time.time()
+    
     if not SENDGRID_AVAILABLE:
         return "SendGrid not configured"
     
@@ -1407,16 +1410,27 @@ def generate_diet_plan_email(cat_id: int, recipient_email: str) -> Optional[str]
     
     try:
         # Get cat data
+        step_start = time.time()
         cat_data = get_cat(cat_id)
+        print(f"[EMAIL TIMING] get_cat took {time.time() - step_start:.2f}s")
+        
         if not cat_data:
             return f"Cat {cat_id} not found"
         
         cat_name = cat_data.get("name", "Your cat")
         
         # Get all necessary data
+        step_start = time.time()
         weights_list = get_weights(cat_id)
+        print(f"[EMAIL TIMING] get_weights took {time.time() - step_start:.2f}s")
+        
+        step_start = time.time()
         foods_list = get_foods()
+        print(f"[EMAIL TIMING] get_foods took {time.time() - step_start:.2f}s")
+        
+        step_start = time.time()
         diet_list = get_diet(cat_id)
+        print(f"[EMAIL TIMING] get_diet took {time.time() - step_start:.2f}s")
         
         if not diet_list:
             return f"No diet plan found for {cat_name}"
@@ -1644,10 +1658,15 @@ Meals Per Day: {meals_per_day}
                 if bcc_email != recipient_email:
                     message.add_bcc(bcc_email)
         
+        step_start = time.time()
         sg = SendGridAPIClient(sendgrid_api_key)
         response = sg.send(message)
+        sendgrid_duration = time.time() - step_start
+        print(f"[EMAIL TIMING] SendGrid API call took {sendgrid_duration:.2f}s")
         
         if response.status_code in [200, 201, 202]:
+            total_email_duration = time.time() - email_func_start
+            print(f"[EMAIL TIMING] Total email generation and sending took {total_email_duration:.2f}s")
             print(f"Email sent successfully to {recipient_email} for cat {cat_id}")
             return None
         else:
@@ -1679,7 +1698,8 @@ Meals Per Day: {meals_per_day}
 @app.route("/api/send-daily-email", methods=["GET", "POST"])
 def send_daily_email():
     """Endpoint to send daily diet plan email. Can be called by Vercel Cron Jobs."""
-    # Log the request for debugging
+    # Log the request for debugging with timing
+    start_time = time.time()
     current_time = datetime.now().isoformat()
     print(f"[CRON] ========== Daily email endpoint called at {current_time} ==========")
     print(f"[CRON] Headers: {dict(request.headers)}")
@@ -1689,6 +1709,7 @@ def send_daily_email():
     # Check if this is a Vercel cron job request
     is_vercel_cron = request.headers.get("x-vercel-cron") == "1"
     print(f"[CRON] Is Vercel cron: {is_vercel_cron}")
+    print(f"[CRON TIMING] Request received at: {current_time} (scheduled for 9:40 AM SGT = 1:40 AM UTC)")
     
     # Get recipient emails from environment (comma-separated or single email)
     recipient_emails_str = os.getenv("DAILY_EMAIL_RECIPIENT", "")
@@ -1723,37 +1744,51 @@ def send_daily_email():
     # Send email to all recipients
     results = []
     for recipient_email in recipient_emails:
+        email_start_time = time.time()
         print(f"[CRON] Attempting to send email to {recipient_email}")
         error = generate_diet_plan_email(cat_id, recipient_email)
+        email_duration = time.time() - email_start_time
         if error:
-            print(f"[CRON ERROR] Failed to send to {recipient_email}: {error}")
-            results.append({"email": recipient_email, "status": "error", "message": error})
+            print(f"[CRON ERROR] Failed to send to {recipient_email}: {error} (took {email_duration:.2f}s)")
+            results.append({"email": recipient_email, "status": "error", "message": error, "duration_seconds": round(email_duration, 2)})
         else:
-            print(f"[CRON SUCCESS] Email sent to {recipient_email}")
-            results.append({"email": recipient_email, "status": "success"})
+            print(f"[CRON SUCCESS] Email sent to {recipient_email} (took {email_duration:.2f}s)")
+            results.append({"email": recipient_email, "status": "success", "duration_seconds": round(email_duration, 2)})
     
     # Check if all succeeded
     all_success = all(r["status"] == "success" for r in results)
     
     # Always return 200 to prevent Vercel from marking cron as failed
     # Log errors but don't fail the cron job
+    total_duration = time.time() - start_time
+    end_time = datetime.now().isoformat()
+    
     if all_success:
         print(f"[CRON] ========== SUCCESS: All emails sent successfully ==========")
+        print(f"[CRON TIMING] Total execution time: {total_duration:.2f}s")
+        print(f"[CRON TIMING] Completed at: {end_time}")
         return jsonify({
             "success": True,
             "message": f"Emails sent to {len(recipient_emails)} recipient(s) for cat {cat_id}",
             "results": results,
-            "timestamp": current_time
+            "timestamp": current_time,
+            "completed_at": end_time,
+            "total_duration_seconds": round(total_duration, 2),
+            "scheduled_time": "9:40 AM SGT (1:40 AM UTC)"
         })
     else:
         print(f"[CRON] ========== PARTIAL FAILURE: Some emails failed to send ==========")
         print(f"[CRON] Failed results: {[r for r in results if r['status'] == 'error']}")
+        print(f"[CRON TIMING] Total execution time: {total_duration:.2f}s")
+        print(f"[CRON TIMING] Completed at: {end_time}")
         # Return 200 with error details so Vercel doesn't mark cron as failed
         return jsonify({
             "success": False,
             "message": "Some emails failed to send",
             "results": results,
             "timestamp": current_time,
+            "completed_at": end_time,
+            "total_duration_seconds": round(total_duration, 2),
             "note": "Check logs for detailed error messages"
         })
 
