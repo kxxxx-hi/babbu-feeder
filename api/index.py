@@ -2005,7 +2005,7 @@ def cron_status():
     """Check cron job configuration and status."""
     status = {
         "cron_configured": True,
-        "schedule": "20 1 * * * (1:20 AM UTC = 9:20 AM Singapore)",
+        "schedule": "40 1 * * * (1:40 AM UTC = 9:40 AM Singapore)",
         "actual_schedule_in_vercel_json": "Check vercel.json for current schedule",
         "environment_variables": {
             "DAILY_EMAIL_RECIPIENT": bool(os.getenv("DAILY_EMAIL_RECIPIENT")),
