@@ -1964,6 +1964,32 @@ def test_image_url():
         import traceback
         return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
 
+@app.route("/api/list-cats", methods=["GET"])
+def list_cats():
+    """List all cats with their IDs and names."""
+    try:
+        cats = get_all_cats()
+        if not cats:
+            return jsonify({
+                "message": "No cats found in database",
+                "cats": [],
+                "count": 0
+            })
+        
+        # Return simplified list with just ID and name
+        cat_list = [{"id": cat.get("id"), "name": cat.get("name", "Unnamed Cat")} for cat in cats]
+        
+        return jsonify({
+            "count": len(cat_list),
+            "cats": cat_list,
+            "cat_ids": [cat["id"] for cat in cat_list]
+        })
+    except Exception as e:
+        print(f"Error listing cats: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
 @app.route("/api/cron-status", methods=["GET"])
 def cron_status():
     """Check cron job configuration and status."""
@@ -2070,6 +2096,7 @@ def api_info():
     """List available API endpoints."""
     endpoints = {
         "available_endpoints": [
+            "/api/list-cats - List all cats with IDs (GET)",
             "/api/send-daily-email - Send daily diet plan email (GET/POST)",
             "/api/cron-status - Check cron job configuration (GET)",
             "/api/test-email - Test email sending (GET/POST)",
@@ -2086,6 +2113,7 @@ def handle_404(error):
     return jsonify({
         "error": "Endpoint not found",
         "available_endpoints": [
+            "/api/list-cats",
             "/api/send-daily-email",
             "/api/cron-status",
             "/api/test-email",
