@@ -1707,9 +1707,43 @@ def send_daily_email():
     print(f"[CRON] URL: {request.url}")
     
     # Check if this is a Vercel cron job request
-    is_vercel_cron = request.headers.get("x-vercel-cron") == "1"
+    # Vercel cron jobs can be identified by:
+    # 1. x-vercel-cron header set to "1"
+    # 2. User-Agent containing "vercel-cron"
+    # 3. X-Vercel-Proxy-Signature header (internal Vercel signature)
+    x_vercel_cron_header = request.headers.get("x-vercel-cron")
+    user_agent = request.headers.get("User-Agent", "")
+    has_proxy_signature = bool(request.headers.get("X-Vercel-Proxy-Signature"))
+    
+    is_vercel_cron = (
+        x_vercel_cron_header == "1" or 
+        "vercel-cron" in user_agent.lower() or
+        has_proxy_signature
+    )
+    
     print(f"[CRON] Is Vercel cron: {is_vercel_cron}")
-    print(f"[CRON TIMING] Request received at: {current_time} (scheduled for 9:40 AM SGT = 1:40 AM UTC)")
+    print(f"[CRON] x-vercel-cron header: {x_vercel_cron_header}")
+    print(f"[CRON] User-Agent: {user_agent}")
+    print(f"[CRON] Has proxy signature: {has_proxy_signature}")
+    
+    # Calculate delay from scheduled time
+    scheduled_utc_hour = 1  # 1:40 AM UTC
+    scheduled_utc_minute = 40
+    current_dt = datetime.now()
+    scheduled_today = current_dt.replace(hour=scheduled_utc_hour, minute=scheduled_utc_minute, second=0, microsecond=0)
+    
+    # If current time is before scheduled time today, check yesterday
+    if current_dt < scheduled_today:
+        from datetime import timedelta
+        scheduled_today = scheduled_today - timedelta(days=1)
+    
+    delay_seconds = (current_dt - scheduled_today).total_seconds()
+    delay_minutes = delay_seconds / 60
+    delay_hours = delay_minutes / 60
+    
+    print(f"[CRON TIMING] Request received at: {current_time}")
+    print(f"[CRON TIMING] Scheduled time: {scheduled_today.isoformat()} (9:40 AM SGT = 1:40 AM UTC)")
+    print(f"[CRON TIMING] Delay: {delay_hours:.2f} hours ({delay_minutes:.1f} minutes)")
     
     # Get recipient emails from environment (comma-separated or single email)
     recipient_emails_str = os.getenv("DAILY_EMAIL_RECIPIENT", "")
