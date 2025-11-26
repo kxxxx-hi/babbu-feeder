@@ -2087,6 +2087,53 @@ def get_cat_data(cat_id):
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+@app.route("/api/add-weight/<int:cat_id>", methods=["GET"])
+def api_add_weight(cat_id):
+    """Add weight via API. Usage: /api/add-weight/1?date=2025-11-26&kg=3.0"""
+    try:
+        date = request.args.get("date")
+        kg = request.args.get("kg")
+        if not date or not kg:
+            return jsonify({"error": "Missing date or kg parameter. Usage: ?date=2025-11-26&kg=3.0"}), 400
+        
+        weight_kg = float(kg)
+        
+        # Read current data
+        data = storage_manager.read_json(f"data/cat_{cat_id}", force_refresh=True)
+        if not data:
+            return jsonify({"error": f"Cat {cat_id} not found"}), 404
+        
+        weights = data.get("weights", [])
+        
+        # Remove existing entry for this date
+        weights = [w for w in weights if w.get("dt") != date]
+        
+        # Add new entry
+        weights.append({"dt": date, "weight_kg": weight_kg})
+        weights = sorted(weights, key=lambda x: x.get("dt", ""))
+        data["weights"] = weights
+        
+        # Write back
+        success = storage_manager.write_json(data, f"data/cat_{cat_id}")
+        
+        if success:
+            # Wait and verify
+            import time
+            time.sleep(2.0)
+            verify = storage_manager.read_json(f"data/cat_{cat_id}", force_refresh=True)
+            verify_weights = verify.get("weights", []) if verify else []
+            
+            return jsonify({
+                "success": True,
+                "message": f"Added {weight_kg} kg on {date}",
+                "weights_count": len(verify_weights),
+                "weights": verify_weights
+            })
+        else:
+            return jsonify({"error": "Failed to write to GCS"}), 500
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 @app.route("/api/cron-status", methods=["GET"])
 def cron_status():
     """Check cron job configuration and status."""
