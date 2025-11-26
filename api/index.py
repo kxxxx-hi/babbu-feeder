@@ -2069,6 +2069,24 @@ def list_cats():
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
+@app.route("/api/cat-data/<int:cat_id>", methods=["GET"])
+def get_cat_data(cat_id):
+    """Get raw cat data including weights for debugging."""
+    try:
+        data = get_cat(cat_id, force_refresh=True)
+        if not data:
+            return jsonify({"error": f"Cat {cat_id} not found"}), 404
+        return jsonify({
+            "cat_id": cat_id,
+            "name": data.get("name"),
+            "weights": data.get("weights", []),
+            "weights_count": len(data.get("weights", [])),
+            "diet": data.get("diet", []),
+            "image_url": data.get("image_url")
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 @app.route("/api/cron-status", methods=["GET"])
 def cron_status():
     """Check cron job configuration and status."""
